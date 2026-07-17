@@ -27,12 +27,15 @@ endif()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-add_subdirectory(libnest2d)
+# BambuPlotter: upstream test suites no longer compile against current
+# libslic3r APIs; keep them out of the default build. The maintained
+# plotter_tests target (tests/libslic3r) stays in `all`.
+add_subdirectory(libnest2d EXCLUDE_FROM_ALL)
 add_subdirectory(libslic3r)
-add_subdirectory(slic3rutils)
-add_subdirectory(fff_print)
-add_subdirectory(sla_print)
-add_subdirectory(fila_manager)
-add_subdirectory(filament_group)
+add_subdirectory(slic3rutils EXCLUDE_FROM_ALL)
+add_subdirectory(fff_print EXCLUDE_FROM_ALL)
+add_subdirectory(sla_print EXCLUDE_FROM_ALL)
+add_subdirectory(fila_manager EXCLUDE_FROM_ALL)
+add_subdirectory(filament_group EXCLUDE_FROM_ALL)
 add_subdirectory(cpp17 EXCLUDE_FROM_ALL)    # does not have to be built all the time
 # add_subdirectory(example)

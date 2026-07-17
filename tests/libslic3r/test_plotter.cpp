@@ -1,0 +1,455 @@
+#include <catch2/catch.hpp>
+
+#include "libslic3r/Plotter/PathFlattener.hpp"
+#include "libslic3r/Plotter/PathOptimizer.hpp"
+#include "libslic3r/Plotter/PlotterGCodeGenerator.hpp"
+#include "libslic3r/Plotter/PlotterPath.hpp"
+#include "libslic3r/Plotter/PlotterSafetyValidator.hpp"
+#include "libslic3r/Plotter/PlotterToolProfile.hpp"
+#include "libslic3r/Plotter/SvgPlotImporter.hpp"
+
+using namespace Slic3r;
+using namespace Slic3r::Plotter;
+
+namespace {
+
+// A calibrated profile mimicking an A1 mini with a side-mounted pen.
+PlotterToolProfile test_profile()
+{
+    PlotterToolProfile p;
+    p.calibrated    = true;
+    p.pen_offset    = Vec2d(35., 0.);
+    p.paper_origin  = Vec2d(30., 30.);
+    p.min_x         = 25.;
+    p.max_x         = 140.;
+    p.min_y         = 25.;
+    p.max_y         = 140.;
+    p.pen_up_z      = 10.;
+    p.pen_contact_z = 3.;
+    p.pen_down_z    = 2.5;
+    return p;
+}
+
+bool contains_line(const std::string &text, const std::string &line)
+{
+    std::istringstream is(text);
+    std::string        l;
+    while (std::getline(is, l))
+        if (l == line)
+            return true;
+    return false;
+}
+
+} // namespace
+
+TEST_CASE("Plotter: profile validity", "[Plotter]")
+{
+    PlotterToolProfile p = test_profile();
+    REQUIRE(p.is_valid());
+
+    SECTION("uncalibrated profile is rejected") {
+        p.calibrated = false;
+        REQUIRE_FALSE(p.is_valid());
+    }
+    SECTION("inverted limits are rejected") {
+        p.min_x = p.max_x + 1.;
+        REQUIRE_FALSE(p.is_valid());
+    }
+    SECTION("pen height ordering is enforced") {
+        p.pen_down_z = p.pen_up_z + 1.;
+        REQUIRE_FALSE(p.is_valid());
+    }
+    SECTION("negative pen-down floor is rejected") {
+        p.pen_down_z = -0.5;
+        p.pen_contact_z = 0.;
+        REQUIRE_FALSE(p.is_valid());
+    }
+    SECTION("paper origin must lie inside the limits") {
+        p.paper_origin = Vec2d(0., 0.);
+        REQUIRE_FALSE(p.is_valid());
+    }
+    SECTION("speed caps are enforced") {
+        p.travel_speed = 1000.;
+        REQUIRE_FALSE(p.is_valid());
+    }
+}
+
+TEST_CASE("Plotter: profile JSON round trip", "[Plotter]")
+{
+    const PlotterToolProfile p = test_profile();
+    const std::string json = p.serialize_json();
+
+    PlotterToolProfile q;
+    std::string        error;
+    REQUIRE(q.deserialize_json(json, &error));
+    CHECK(error.empty());
+    CHECK(q.calibrated == p.calibrated);
+    CHECK(q.paper_origin == p.paper_origin);
+    CHECK(q.pen_offset == p.pen_offset);
+    CHECK(q.min_x == Approx(p.min_x));
+    CHECK(q.max_y == Approx(p.max_y));
+    CHECK(q.pen_up_z == Approx(p.pen_up_z));
+    CHECK(q.pen_contact_z == Approx(p.pen_contact_z));
+    CHECK(q.pen_down_z == Approx(p.pen_down_z));
+    CHECK(q.allow_homing_in_job == p.allow_homing_in_job);
+    REQUIRE(q.is_valid());
+
+    PlotterToolProfile bad;
+    REQUIRE_FALSE(bad.deserialize_json("{ not json", &error));
+    CHECK_FALSE(error.empty());
+}
+
+TEST_CASE("Plotter: PathFlattener stays within tolerance", "[Plotter]")
+{
+    // Cubic approximation of a quarter circle of radius 10 around (0,0):
+    // (10,0) -> (0,10), control points at k = 0.5523 * r.
+    const double       k = 5.522847498;
+    const PathFlattener flattener(0.05);
+    std::vector<Vec2d> pts;
+    flattener.flatten_cubic(pts, Vec2d(10., 0.), Vec2d(10., k), Vec2d(k, 10.), Vec2d(0., 10.));
+
+    REQUIRE(pts.size() >= 4);
+    CHECK((pts.front() - Vec2d(10., 0.)).norm() < 1e-9);
+    CHECK((pts.back() - Vec2d(0., 10.)).norm() < 1e-9);
+    // Every vertex must lie near the arc; the bezier itself deviates from a
+    // true circle by < 0.02 % of r.
+    for (const Vec2d &pt : pts)
+        CHECK(pt.norm() == Approx(10.).margin(0.06));
+    // And the chords must not cut inside the arc by more than the tolerance.
+    for (size_t i = 1; i < pts.size(); ++i) {
+        const Vec2d mid = 0.5 * (pts[i - 1] + pts[i]);
+        CHECK(mid.norm() > 10. - 0.06);
+    }
+}
+
+TEST_CASE("Plotter: SVG import preserves open paths", "[Plotter]")
+{
+    // 100x100 mm document: one open polyline stroke and one closed rectangle.
+    const std::string svg = R"(<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
+        <polyline points="10,10 50,10 50,50" fill="none" stroke="black" stroke-width="1"/>
+        <rect x="20" y="20" width="30" height="20" fill="none" stroke="black" stroke-width="1"/>
+    </svg>)";
+
+    const SvgImportResult result = SvgPlotImporter::import_memory(svg);
+    REQUIRE(result.ok);
+    CHECK(result.width == Approx(100.));
+    CHECK(result.height == Approx(100.));
+    REQUIRE(result.paths.size() == 2);
+
+    const auto open_it = std::find_if(result.paths.begin(), result.paths.end(),
+                                      [](const PlotPath &p) { return !p.closed; });
+    const auto closed_it = std::find_if(result.paths.begin(), result.paths.end(),
+                                        [](const PlotPath &p) { return p.closed; });
+    REQUIRE(open_it != result.paths.end());
+    REQUIRE(closed_it != result.paths.end());
+
+    // Y flip: SVG (10,10) in a 100-high document becomes (10,90).
+    CHECK((open_it->points.front() - Vec2d(10., 90.)).norm() < 1e-3);
+    CHECK((open_it->points.back() - Vec2d(50., 50.)).norm() < 1e-3);
+    // The open path must NOT have been closed or healed.
+    CHECK((open_it->points.front() - open_it->points.back()).norm() > 1.);
+
+    // Rectangle: 4 corners, no duplicated closing point.
+    CHECK(closed_it->points.size() == 4);
+}
+
+TEST_CASE("Plotter: SVG import falls back to fill-only shapes", "[Plotter]")
+{
+    const std::string svg = R"(<svg xmlns="http://www.w3.org/2000/svg" width="50mm" height="50mm" viewBox="0 0 50 50">
+        <rect x="10" y="10" width="20" height="20" fill="red"/>
+    </svg>)";
+    const SvgImportResult result = SvgPlotImporter::import_memory(svg);
+    REQUIRE(result.ok);
+    REQUIRE(result.paths.size() == 1);
+    CHECK(result.paths.front().closed);
+}
+
+TEST_CASE("Plotter: SVG import rejects empty documents", "[Plotter]")
+{
+    const SvgImportResult result = SvgPlotImporter::import_memory("<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+    CHECK_FALSE(result.ok);
+    CHECK_FALSE(result.error.empty());
+}
+
+TEST_CASE("Plotter: PathOptimizer reduces pen-up travel", "[Plotter]")
+{
+    // Three horizontal strokes deliberately ordered worst-first.
+    PlotPaths paths;
+    for (double y : {100., 10., 55.}) {
+        PlotPath p;
+        p.points = {Vec2d(0., y), Vec2d(50., y)};
+        paths.emplace_back(p);
+    }
+    const Vec2d start(0., 0.);
+    const double travel_before = pen_up_travel(paths, start);
+
+    PlotPaths optimized = PathOptimizer::optimize(paths, start);
+    REQUIRE(optimized.size() == paths.size());
+    const double travel_after = pen_up_travel(optimized, start);
+    CHECK(travel_after < travel_before);
+    // Best order is bottom-up with alternating direction; the travel must at
+    // least beat the trivial 100+145+100 ordering by a wide margin.
+    CHECK(travel_after < 120.);
+
+    // Geometry is preserved (same multiset of segment lengths).
+    double len_before = 0., len_after = 0.;
+    for (const PlotPath &p : paths) len_before += p.length();
+    for (const PlotPath &p : optimized) len_after += p.length();
+    CHECK(len_after == Approx(len_before));
+}
+
+TEST_CASE("Plotter: PathOptimizer keeps closed paths closed", "[Plotter]")
+{
+    PlotPath square;
+    square.closed = true;
+    square.points = {Vec2d(0., 0.), Vec2d(10., 0.), Vec2d(10., 10.), Vec2d(0., 10.)};
+    PlotPath line;
+    line.points = {Vec2d(20., 0.), Vec2d(30., 0.)};
+
+    PlotPaths optimized = PathOptimizer::optimize({square, line}, Vec2d(0., 0.));
+    REQUIRE(optimized.size() == 2);
+    int closed_count = 0;
+    for (const PlotPath &p : optimized)
+        if (p.closed)
+            ++closed_count;
+    CHECK(closed_count == 1);
+}
+
+TEST_CASE("Plotter: PathOptimizer preserves every path (concentric squares regression)", "[Plotter]")
+{
+    // Five concentric closed squares: the previous chain_polylines-based
+    // implementation dropped/duplicated closed paths whose first == last
+    // endpoint collided in its KD tree. All five must survive, unchanged in
+    // total length, all still closed.
+    PlotPaths paths;
+    const Vec2d center(30., 30.);
+    for (int i = 0; i < 5; ++i) {
+        const double size = 20. + 10. * i;
+        const Vec2d corner = center - Vec2d(size / 2., size / 2.);
+        PlotPath sq;
+        sq.closed = true;
+        sq.points = {corner, corner + Vec2d(size, 0.), corner + Vec2d(size, size), corner + Vec2d(0., size)};
+        paths.emplace_back(sq);
+    }
+    double len_before = 0.;
+    for (const PlotPath &p : paths) len_before += p.length() + (p.points.front() - p.points.back()).norm();
+
+    PlotPaths optimized = PathOptimizer::optimize(paths, Vec2d(0., 0.));
+    REQUIRE(optimized.size() == 5);
+    double len_after = 0.;
+    for (const PlotPath &p : optimized) {
+        CHECK(p.closed);
+        CHECK(p.points.size() == 4);
+        len_after += p.length() + (p.points.front() - p.points.back()).norm();
+    }
+    CHECK(len_after == Approx(len_before));
+    // Entry-vertex rotation: after the initial ~28.3 mm approach from (0,0),
+    // each square must be entered at the corner nearest the previous one
+    // (4 hops of ~7.07 mm), so total travel stays near 56.6 mm.
+    CHECK(pen_up_travel(optimized, Vec2d(0., 0.)) < 60.);
+}
+
+TEST_CASE("Plotter: G-code generator emits movement-only output", "[Plotter]")
+{
+    const PlotterToolProfile profile = test_profile();
+    const GCodeGenResult result = PlotterGCodeGenerator::generate(
+        PlotterGCodeGenerator::test_square(20., Vec2d(10., 10.)), profile);
+
+    REQUIRE(result.ok);
+    REQUIRE(result.error.empty());
+    CHECK(result.path_count == 1);
+    CHECK(result.draw_length == Approx(80.));
+
+    // Structure: absolute mode, pen up before any XY, pen down at start.
+    CHECK(contains_line(result.gcode, "G90"));
+    CHECK(contains_line(result.gcode, "G1 Z10 F600"));
+    CHECK(contains_line(result.gcode, "G1 Z2.5 F600"));
+    // Square corners in machine space: paper (10,10) + origin (30,30) = (40,40).
+    CHECK(contains_line(result.gcode, "G1 X40 Y40 F4800"));
+    CHECK(contains_line(result.gcode, "G1 X60 Y40 F1800"));
+    // Closed square: returns to the first corner.
+    const size_t first_corner = result.gcode.find("G1 X40 Y40 F1800");
+    CHECK(first_corner != std::string::npos);
+
+    // No homing by default, no forbidden commands anywhere.
+    for (const std::string &forbidden : {"G28", "M109", "M190", "M620", "T0", "G92", " E"})
+        CHECK(result.gcode.find(forbidden) == std::string::npos);
+    // The job must end with heaters explicitly off (the firmware preheats on
+    // its own and never cools down unless commanded).
+    CHECK(contains_line(result.gcode, "M104 S0"));
+    CHECK(contains_line(result.gcode, "M140 S0"));
+
+    // The generated file must pass the strict validator.
+    const ValidationResult validation = PlotterSafetyValidator::validate(result.gcode, profile);
+    INFO(validation.summary());
+    CHECK(validation.ok);
+}
+
+TEST_CASE("Plotter: G-code generator rejects out-of-bounds jobs", "[Plotter]")
+{
+    const PlotterToolProfile profile = test_profile();
+    // Square reaching machine X = 30 + 150 = 180 > max_x = 140.
+    const GCodeGenResult result = PlotterGCodeGenerator::generate(
+        PlotterGCodeGenerator::test_square(150.), profile);
+    CHECK_FALSE(result.ok);
+    CHECK(result.gcode.empty());
+    CHECK(result.error.find("calibrated plotting area") != std::string::npos);
+}
+
+TEST_CASE("Plotter: G-code generator refuses invalid profiles", "[Plotter]")
+{
+    PlotterToolProfile profile = test_profile();
+    profile.calibrated = false;
+    const GCodeGenResult result = PlotterGCodeGenerator::generate(
+        PlotterGCodeGenerator::test_square(), profile);
+    CHECK_FALSE(result.ok);
+    CHECK(result.error.find("not been calibrated") != std::string::npos);
+}
+
+TEST_CASE("Plotter: validator accepts a known-good file", "[Plotter]")
+{
+    const PlotterToolProfile profile = test_profile();
+    const std::string good =
+        "; hand-written job\n"
+        "M400\n"
+        "G90\n"
+        "G1 Z10 F600\n"
+        "G1 X30 Y30 F4800\n"
+        "G1 Z2.5 F600\n"
+        "G1 X50 Y30 F1800\n"
+        "G4 S1\n"
+        "G1 Z10 F600\n"
+        "M400\n"
+        "M104 S0\n"
+        "M140 S0\n";
+    const ValidationResult result = PlotterSafetyValidator::validate(good, profile);
+    INFO(result.summary());
+    CHECK(result.ok);
+}
+
+TEST_CASE("Plotter: validator rejects every prohibited category", "[Plotter]")
+{
+    const PlotterToolProfile profile = test_profile();
+    const std::string prologue = "G90\nG1 Z10 F600\nG1 X30 Y30 F4800\n";
+    const std::string epilogue = "G1 Z10 F600\n";
+
+    auto rejects = [&](const std::string &line, const std::string &reason_fragment) {
+        const ValidationResult result =
+            PlotterSafetyValidator::validate(prologue + line + "\n" + epilogue, profile);
+        INFO("line: " << line << "\n" << result.summary());
+        CHECK_FALSE(result.ok);
+        const bool found = std::any_of(result.issues.begin(), result.issues.end(),
+                                       [&](const ValidationIssue &issue) {
+                                           return issue.reason.find(reason_fragment) != std::string::npos;
+                                       });
+        CHECK(found);
+    };
+
+    // Extrusion / E axis.
+    rejects("G1 X40 Y40 E1.5 F1800", "E-axis");
+    rejects("M83", "E-axis");
+    rejects("G92 E0", "coordinate system");
+    // Heating (only the exact heater-OFF forms M104 S0 / M140 S0 are legal).
+    rejects("M104 S220", "nozzle heating");
+    rejects("M104 S1", "nozzle heating");
+    rejects("M104 S0 T1", "nozzle heating");
+    rejects("M109 S220", "nozzle heating");
+    rejects("M140 S60", "bed heating");
+    rejects("M140 S0.5", "bed heating");
+    rejects("M190 S60", "bed heating");
+    // Filament / AMS.
+    rejects("M620 S0", "AMS");
+    rejects("M701", "filament loading");
+    rejects("M702", "filament unloading");
+    rejects("M600", "filament change");
+    // Tool change.
+    rejects("T0", "tool changes");
+    rejects("T1000", "tool changes");
+    // Calibration / internal.
+    rejects("M971 S11 C10", "calibration");
+    rejects("M1002 judge_flag", "judge");
+    rejects("G29", "bed leveling");
+    // Homing inside a job (default profile).
+    rejects("G28", "crush");
+    // Relative mode.
+    rejects("G91", "relative positioning");
+    // Motion limits.
+    rejects("G1 X10 Y30 F1800", "X target outside");
+    rejects("G1 X30 Y200 F1800", "Y target outside");
+    rejects("G1 Z1.0 F600", "below the calibrated safe pen-down");
+    rejects("G1 Z50 F600", "above the calibrated pen-up");
+    // Unknown commands stay denied.
+    rejects("M42 P1 S255", "not on the plotter allowlist");
+    rejects("M106 S255", "fan");
+}
+
+TEST_CASE("Plotter: validator enforces file-level rules", "[Plotter]")
+{
+    const PlotterToolProfile profile = test_profile();
+
+    SECTION("empty file") {
+        const ValidationResult r = PlotterSafetyValidator::validate("; nothing\n", profile);
+        CHECK_FALSE(r.ok);
+    }
+    SECTION("XY motion before Z is established") {
+        const ValidationResult r =
+            PlotterSafetyValidator::validate("G90\nG1 X30 Y30 F4800\nG1 Z10 F600\n", profile);
+        CHECK_FALSE(r.ok);
+    }
+    SECTION("motion before G90") {
+        const ValidationResult r =
+            PlotterSafetyValidator::validate("G1 Z10 F600\nG90\nG1 Z10 F600\n", profile);
+        CHECK_FALSE(r.ok);
+    }
+    SECTION("must end with the pen raised") {
+        const ValidationResult r = PlotterSafetyValidator::validate(
+            "G90\nG1 Z10 F600\nG1 X30 Y30 F4800\nG1 Z2.5 F600\n", profile);
+        CHECK_FALSE(r.ok);
+        const bool found = std::any_of(r.issues.begin(), r.issues.end(), [](const ValidationIssue &i) {
+            return i.reason.find("end with the pen raised") != std::string::npos;
+        });
+        CHECK(found);
+    }
+    SECTION("motion without feedrate") {
+        const ValidationResult r =
+            PlotterSafetyValidator::validate("G90\nG1 Z10\nG1 Z10 F600\n", profile);
+        CHECK_FALSE(r.ok);
+    }
+    SECTION("uncalibrated profile is refused") {
+        PlotterToolProfile p = test_profile();
+        p.calibrated = false;
+        const ValidationResult r = PlotterSafetyValidator::validate("G90\nG1 Z10 F600\n", p);
+        CHECK_FALSE(r.ok);
+    }
+}
+
+TEST_CASE("Plotter: validator allows a single leading G28 when opted in", "[Plotter]")
+{
+    PlotterToolProfile profile = test_profile();
+    profile.allow_homing_in_job = true;
+
+    const std::string good =
+        "G28\nG90\nG1 Z10 F600\nG1 X30 Y30 F4800\nG1 Z10 F600\n";
+    CHECK(PlotterSafetyValidator::validate(good, profile).ok);
+
+    // Still rejected after motion, with parameters, or twice.
+    CHECK_FALSE(PlotterSafetyValidator::validate(
+        "G90\nG1 Z10 F600\nG28\nG1 Z10 F600\n", profile).ok);
+    CHECK_FALSE(PlotterSafetyValidator::validate(
+        "G28 X\nG90\nG1 Z10 F600\nG1 X30 Y30 F4800\nG1 Z10 F600\n", profile).ok);
+}
+
+TEST_CASE("Plotter: cold 20mm square end-to-end (software half)", "[Plotter]")
+{
+    // Implementation-order step 12, software portion: the hard-coded square
+    // must generate, validate, and stay strictly inside the calibrated area.
+    const PlotterToolProfile profile = test_profile();
+    const PlotPaths square = PlotterGCodeGenerator::test_square(20., Vec2d(5., 5.));
+    const PlotPaths ordered = PathOptimizer::optimize(square, Vec2d(0., 0.));
+    const GCodeGenResult gen = PlotterGCodeGenerator::generate(ordered, profile);
+    REQUIRE(gen.ok);
+    const ValidationResult validation = PlotterSafetyValidator::validate(gen.gcode, profile);
+    INFO(validation.summary());
+    REQUIRE(validation.ok);
+    CHECK(gen.draw_length == Approx(80.));
+}
