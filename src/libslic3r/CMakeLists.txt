@@ -284,6 +284,19 @@ set(lisbslic3r_sources
     PlaceholderParser.hpp
     Platform.cpp
     Platform.hpp
+    Plotter/PathFlattener.cpp
+    Plotter/PathFlattener.hpp
+    Plotter/PathOptimizer.cpp
+    Plotter/PathOptimizer.hpp
+    Plotter/PlotterGCodeGenerator.cpp
+    Plotter/PlotterGCodeGenerator.hpp
+    Plotter/PlotterPath.hpp
+    Plotter/PlotterSafetyValidator.cpp
+    Plotter/PlotterSafetyValidator.hpp
+    Plotter/PlotterToolProfile.cpp
+    Plotter/PlotterToolProfile.hpp
+    Plotter/SvgPlotImporter.cpp
+    Plotter/SvgPlotImporter.hpp
     Point.cpp
     Point.hpp
     Polygon.cpp
