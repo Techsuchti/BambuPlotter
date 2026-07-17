@@ -290,6 +290,8 @@ set(lisbslic3r_sources
     Plotter/PathOptimizer.hpp
     Plotter/PlotterGCodeGenerator.cpp
     Plotter/PlotterGCodeGenerator.hpp
+    Plotter/PlotterJobBuilder.cpp
+    Plotter/PlotterJobBuilder.hpp
     Plotter/PlotterPath.hpp
     Plotter/PlotterSafetyValidator.cpp
     Plotter/PlotterSafetyValidator.hpp

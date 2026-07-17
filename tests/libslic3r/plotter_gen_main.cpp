@@ -14,6 +14,7 @@
 
 #include "libslic3r/Plotter/PathOptimizer.hpp"
 #include "libslic3r/Plotter/PlotterGCodeGenerator.hpp"
+#include "libslic3r/Plotter/PlotterJobBuilder.hpp"
 #include "libslic3r/Plotter/PlotterSafetyValidator.hpp"
 #include "libslic3r/Plotter/PlotterToolProfile.hpp"
 
@@ -23,6 +24,8 @@ using namespace Slic3r::Plotter;
 int main(int argc, char **argv)
 {
     std::string out_path;
+    std::string threemf_path;   // --3mf <out.gcode.3mf>: full container via PlotterJobBuilder
+    std::string resources_dir;  // --resources <repo>/resources/plotter
     int         squares = 5;
     bool        dry_run = false;
 
@@ -31,6 +34,10 @@ int main(int argc, char **argv)
             dry_run = true;
         else if (std::strcmp(argv[i], "--squares") == 0 && i + 1 < argc)
             squares = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--3mf") == 0 && i + 1 < argc)
+            threemf_path = argv[++i];
+        else if (std::strcmp(argv[i], "--resources") == 0 && i + 1 < argc)
+            resources_dir = argv[++i];
         else if (out_path.empty())
             out_path = argv[i];
     }
@@ -90,5 +97,26 @@ int main(int argc, char **argv)
     }
     std::fprintf(stderr, "wrote %s: %zu paths, draw %.1f mm, travel %.1f mm\n",
                  out_path.c_str(), gen.path_count, gen.draw_length, gen.travel_length);
+
+    if (!threemf_path.empty()) {
+        if (resources_dir.empty()) {
+            std::fprintf(stderr, "--3mf requires --resources <repo>/resources/plotter\n");
+            return 2;
+        }
+        const PlotterJob job = PlotterJobBuilder::build(ordered, profile, "plotter_gen_dryrun", resources_dir);
+        if (!job.ok) {
+            std::fprintf(stderr, "job build FAILED: %s\n", job.error.c_str());
+            return 1;
+        }
+        std::ofstream zf(threemf_path, std::ios::trunc | std::ios::binary);
+        zf.write(job.container.data(), std::streamsize(job.container.size()));
+        zf.close();
+        if (!zf) {
+            std::fprintf(stderr, "cannot write %s\n", threemf_path.c_str());
+            return 1;
+        }
+        std::fprintf(stderr, "wrote %s: %zu bytes, estimated %d s\n",
+                     threemf_path.c_str(), job.container.size(), job.estimated_seconds);
+    }
     return 0;
 }

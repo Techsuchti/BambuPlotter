@@ -118,18 +118,23 @@ ValidationResult PlotterSafetyValidator::validate(const std::string &gcode, cons
         if (!raw.empty() && raw.back() == '\r')
             raw.pop_back();
 
-        for (unsigned char c : raw)
-            if (c != '\t' && (c < 0x20 || c > 0x7e)) {
-                add_issue(trim(raw), "line contains non-printable or non-ASCII characters");
-                break;
-            }
-
-        // Strip comment.
+        // Strip comment. Comments may hold arbitrary metadata (config block),
+        // so only the executable part is checked for printable ASCII.
         std::string line = raw;
         if (const size_t semicolon = line.find(';'); semicolon != std::string::npos)
             line.resize(semicolon);
         line = trim(line);
         if (line.empty())
+            continue;
+
+        bool unprintable = false;
+        for (unsigned char c : line)
+            if (c != '\t' && (c < 0x20 || c > 0x7e)) {
+                add_issue(line, "command contains non-printable or non-ASCII characters");
+                unprintable = true;
+                break;
+            }
+        if (unprintable)
             continue;
 
         std::vector<std::string> words = split_words(line);
@@ -146,6 +151,18 @@ ValidationResult PlotterSafetyValidator::validate(const std::string &gcode, cons
         if (cmd == "M400") {
             if (words.size() > 1)
                 add_issue(line, "M400 takes no parameters");
+            continue;
+        }
+
+        // Progress reporting (printer display only, no machine effect).
+        if (cmd == "M73") {
+            for (size_t i = 1; i < words.size(); ++i) {
+                const char letter = char(std::toupper((unsigned char) words[i][0]));
+                double v;
+                if ((letter != 'P' && letter != 'R' && letter != 'C' && letter != 'E') ||
+                    !parse_number(words[i].substr(1), v) || v < 0.)
+                    add_issue(line, "M73 only accepts non-negative P/R/C/E progress parameters");
+            }
             continue;
         }
 

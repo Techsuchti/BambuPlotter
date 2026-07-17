@@ -1,8 +1,11 @@
 #include <catch2/catch.hpp>
 
+#include <miniz.h>
+
 #include "libslic3r/Plotter/PathFlattener.hpp"
 #include "libslic3r/Plotter/PathOptimizer.hpp"
 #include "libslic3r/Plotter/PlotterGCodeGenerator.hpp"
+#include "libslic3r/Plotter/PlotterJobBuilder.hpp"
 #include "libslic3r/Plotter/PlotterPath.hpp"
 #include "libslic3r/Plotter/PlotterSafetyValidator.hpp"
 #include "libslic3r/Plotter/PlotterToolProfile.hpp"
@@ -437,6 +440,85 @@ TEST_CASE("Plotter: validator allows a single leading G28 when opted in", "[Plot
         "G90\nG1 Z10 F600\nG28\nG1 Z10 F600\n", profile).ok);
     CHECK_FALSE(PlotterSafetyValidator::validate(
         "G28 X\nG90\nG1 Z10 F600\nG1 X30 Y30 F4800\nG1 Z10 F600\n", profile).ok);
+}
+
+TEST_CASE("Plotter: job builder produces a valid uploadable container", "[Plotter]")
+{
+    const std::string resources_dir = std::string(TEST_DATA_DIR) + "/../../resources/plotter";
+    const PlotterToolProfile profile = test_profile();
+
+    const PlotterJob job = PlotterJobBuilder::build(
+        PlotterGCodeGenerator::test_square(20., Vec2d(10., 10.)), profile,
+        "unit test square", resources_dir);
+    INFO(job.error);
+    REQUIRE(job.ok);
+    CHECK(job.file_name == "unit_test_square.gcode.3mf");
+    CHECK(job.estimated_seconds > 0);
+
+    // Plate G-code structure the firmware requires (hardware-verified).
+    for (const std::string &marker :
+         {"; HEADER_BLOCK_START", "; total layer number: 2", "; CONFIG_BLOCK_START",
+          "; EXECUTABLE_BLOCK_START", "M73 P100 R0", "; EXECUTABLE_BLOCK_END",
+          "M104 S0", "M140 S0"})
+        CHECK(job.plate_gcode.find(marker) != std::string::npos);
+    // The movement core is embedded verbatim (machine coords 40,40 for
+    // paper 10,10 with origin 30,30).
+    CHECK(job.plate_gcode.find("G1 X40 Y40") != std::string::npos);
+    // Config gcode keys are neutralized — no heating anywhere.
+    for (const std::string &forbidden : {"M109", "M190", "M104 S170", "M620"})
+        CHECK(job.plate_gcode.find(forbidden) == std::string::npos);
+
+    // Container: readable zip whose plate gcode and md5 entries match.
+    mz_zip_archive zip;
+    std::memset(&zip, 0, sizeof(zip));
+    REQUIRE(mz_zip_reader_init_mem(&zip, job.container.data(), job.container.size(), 0));
+    auto extract = [&](const char *name) {
+        size_t size = 0;
+        void  *p    = mz_zip_reader_extract_file_to_heap(&zip, name, &size, 0);
+        REQUIRE(p != nullptr);
+        std::string out(static_cast<const char *>(p), size);
+        mz_free(p);
+        return out;
+    };
+    CHECK(extract("Metadata/plate_1.gcode") == job.plate_gcode);
+    const std::string md5 = extract("Metadata/plate_1.gcode.md5");
+    CHECK(md5.size() == 32);
+    CHECK(md5.find_first_not_of("0123456789ABCDEF") == std::string::npos);
+    // Template metadata set is preserved.
+    for (const char *entry : {"Metadata/slice_info.config", "Metadata/plate_1.json",
+                              "Metadata/project_settings.config", "[Content_Types].xml"}) {
+        size_t size = 0;
+        void  *p    = mz_zip_reader_extract_file_to_heap(&zip, entry, &size, 0);
+        CHECK(p != nullptr);
+        if (p) mz_free(p);
+    }
+    mz_zip_reader_end(&zip);
+}
+
+TEST_CASE("Plotter: job builder refuses invalid input", "[Plotter]")
+{
+    const std::string resources_dir = std::string(TEST_DATA_DIR) + "/../../resources/plotter";
+    PlotterToolProfile profile = test_profile();
+
+    SECTION("uncalibrated profile") {
+        profile.calibrated = false;
+        const PlotterJob job = PlotterJobBuilder::build(
+            PlotterGCodeGenerator::test_square(), profile, "x", resources_dir);
+        CHECK_FALSE(job.ok);
+        CHECK(job.container.empty());
+    }
+    SECTION("out-of-bounds paths") {
+        const PlotterJob job = PlotterJobBuilder::build(
+            PlotterGCodeGenerator::test_square(500.), profile, "x", resources_dir);
+        CHECK_FALSE(job.ok);
+        CHECK(job.error.find("calibrated plotting area") != std::string::npos);
+    }
+    SECTION("missing resources") {
+        const PlotterJob job = PlotterJobBuilder::build(
+            PlotterGCodeGenerator::test_square(), profile, "x", "/nonexistent/dir");
+        CHECK_FALSE(job.ok);
+        CHECK(job.error.find("missing resource") != std::string::npos);
+    }
 }
 
 TEST_CASE("Plotter: cold 20mm square end-to-end (software half)", "[Plotter]")

@@ -41,6 +41,7 @@ struct ValidationResult
 //   - M104 S0 and M140 S0 exactly (heaters OFF; the firmware preheats on its
 //     own at job start and only cools down when the job commands it — any
 //     non-zero heater target is rejected)
+//   - M73 with P/R/C/E progress parameters (printer display only)
 //   - a single bare G28 before any motion, and only when the profile opts in
 //     via allow_homing_in_job (homing with a mounted pen can crush the pen)
 // File-level rules: at least one motion command, and the final commanded Z
