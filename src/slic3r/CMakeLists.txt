@@ -660,6 +660,8 @@ set(SLIC3R_GUI_SOURCES
     Utils/CertificateVerify.hpp
     Utils/CertificateVerify.cpp
     Utils/FrameBuffer.hpp
+    GUI/Plotter/PlotterCalibrationController.cpp
+    GUI/Plotter/PlotterCalibrationController.hpp
 )
 
 add_subdirectory(GUI/DeviceCore)
