@@ -6,9 +6,9 @@ static bool gDarkMode = false;
 static bool operator<(wxColour const &l, wxColour const &r) { return l.GetRGBA() < r.GetRGBA(); }
 
 static std::map<wxColour, wxColour> gDarkColors{
-    {ThemeColor::BrandGreen,  "#21A452"},/*green*/
-    {ThemeColor::BrandGreenPressed, "#1C8A46"},
-    {ThemeColor::BrandGreenHovered, "#37B865"},
+    {ThemeColor::BrandGreen,  "#7C99AC"},/*slate accent*/
+    {ThemeColor::BrandGreenPressed, "#5E7889"},
+    {ThemeColor::BrandGreenHovered, "#8FA9BC"},
     // {"#1F8EEA", "#2778D2"},/*blue*/ -- dead, only used by disabled Notebook.cpp:80 OnPaint
     {ThemeColor::Warning,     "#D15B00"},
     {ThemeColor::Danger,      "#BB2A3A"},/*red*/

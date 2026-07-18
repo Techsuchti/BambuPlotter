@@ -7,6 +7,6 @@
 <path d="M18 12 L20 14" stroke="#666666" stroke-width="2" stroke-linecap="round"/>
 <path d="M30 12 L28 14" stroke="#666666" stroke-width="2" stroke-linecap="round"/>
 <circle cx="24" cy="42" r="1.5" fill="#666666"/>
-<path d="M34 34 A14 14 0 0 0 14 34" stroke="#4CAF50" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M34 34 A14 14 0 0 0 14 34" stroke="#7998AF" stroke-width="3" fill="none" stroke-linecap="round"/>
 </svg>
 
