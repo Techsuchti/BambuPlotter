@@ -662,6 +662,12 @@ set(SLIC3R_GUI_SOURCES
     Utils/FrameBuffer.hpp
     GUI/Plotter/PlotterCalibrationController.cpp
     GUI/Plotter/PlotterCalibrationController.hpp
+    GUI/Plotter/PlotterCalibrationDialog.cpp
+    GUI/Plotter/PlotterCalibrationDialog.hpp
+    GUI/Plotter/PlotterModeDialog.cpp
+    GUI/Plotter/PlotterModeDialog.hpp
+    GUI/Plotter/PlotterPrintJob.cpp
+    GUI/Plotter/PlotterPrintJob.hpp
 )
 
 add_subdirectory(GUI/DeviceCore)

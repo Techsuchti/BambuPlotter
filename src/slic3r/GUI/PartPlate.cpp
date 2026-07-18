@@ -4261,6 +4261,31 @@ void PartPlateList::calc_gridlines(const ExPolygon &poly, const BoundingBox &pp_
 		BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "Unable to create bed grid lines\n";
 }
 
+void PartPlateList::set_plot_rectangle(const BoundingBoxf &rect_mm, bool visible)
+{
+    m_plot_rect.reset();
+    m_plot_rect_visible = visible && rect_mm.defined
+        && rect_mm.size().x() > 0. && rect_mm.size().y() > 0.;
+    if (!m_plot_rect_visible)
+        return;
+
+    // Mirror calc_gridlines: build scaled 2D lines and lift them to GROUND_Z.
+    Polyline rect_contour;
+    const Point p_min(scale_(rect_mm.min.x()), scale_(rect_mm.min.y()));
+    const Point p_max(scale_(rect_mm.max.x()), scale_(rect_mm.max.y()));
+    rect_contour.append(p_min);
+    rect_contour.append(Point(p_max.x(), p_min.y()));
+    rect_contour.append(p_max);
+    rect_contour.append(Point(p_min.x(), p_max.y()));
+    rect_contour.append(p_min);
+
+    Lines rect_lines = to_lines(rect_contour);
+    if (!m_plot_rect.init_model_from_lines(rect_lines, GROUND_Z)) {
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": Unable to create plot rectangle lines\n";
+        m_plot_rect_visible = false;
+    }
+}
+
 void PartPlateList::calc_vertex_for_number(int index, bool one_number, GLModel &gl_model)
 {
     ExPolygon poly;
@@ -6181,6 +6206,7 @@ void PartPlateList::render_instance(bool bottom, bool only_current, bool only_bo
             }
             if (show_grid)
                 render_grid(bottom); // for selected_plate
+            render_plot_rectangle(); // calibrated plotting area, only when set
         }
        if (enable_multi_instance) {
            wxGetApp().unbind_shader();
@@ -6238,6 +6264,18 @@ void PartPlateList::render_grid(bool bottom)
     p_ogl_manager->set_line_width(2.0f * m_scale_factor);
     m_gridlines_bolder.set_color(color);
     m_gridlines_bolder.render_geometry();
+}
+
+void PartPlateList::render_plot_rectangle()
+{
+    if (!m_plot_rect_visible || !m_plot_rect.is_initialized())
+        return;
+    const auto &p_ogl_manager = wxGetApp().get_opengl_manager();
+    p_ogl_manager->set_line_width(2.0f * m_scale_factor);
+    // slate accent
+    const ColorRGBA plot_rect_color{0.43f, 0.55f, 0.63f, 1.0f};
+    m_plot_rect.set_color(plot_rect_color);
+    m_plot_rect.render_geometry();
 }
 
 void PartPlateList::render_instance_grid(bool bottom)

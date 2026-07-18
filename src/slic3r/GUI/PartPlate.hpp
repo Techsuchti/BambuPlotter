@@ -690,6 +690,8 @@ private:
     GLModel                               m_wrapping_detection_triangles;
     GLModel                               m_gridlines;
     GLModel                               m_gridlines_bolder;
+    GLModel                               m_plot_rect;
+    bool                                  m_plot_rect_visible{false};
     GLModel                               m_del_icon;
     GLModel                               m_arrange_icon;
     GLModel                               m_orient_icon;
@@ -933,6 +935,10 @@ public:
     void render_instance_background(bool force_default_color = false);
     void render_unselected_background(bool force_default_color);
     void render_grid(bool bottom);
+    // Calibrated plotting-rectangle overlay. `rect_mm` is in plate coordinates
+    // (mm); passing visible=false (or an empty rectangle) disables the overlay.
+    void set_plot_rectangle(const BoundingBoxf& rect_mm, bool visible);
+    void render_plot_rectangle();
     void render_wrapping_detection_area(bool force_default_color);
     void render_exclude_area(bool force_default_color);
     void render_instance_exclude_area(bool force_default_color);
