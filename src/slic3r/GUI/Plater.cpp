@@ -159,7 +159,6 @@
 #include "Widgets/ComboBox.hpp"
 #include "Widgets/StaticGroup.hpp"
 #include "Widgets/MultiNozzleSync.hpp"
-#include "Plotter/PlotterPanel.hpp"
 
 #include "GUI_ObjectTable.hpp"
 #include "libslic3r/Thread.hpp"
@@ -672,12 +671,6 @@ struct Sidebar::priv
     ExtruderGroup *left_extruder = nullptr;
     ExtruderGroup *right_extruder = nullptr;
     ExtruderGroup *single_extruder = nullptr;
-
-    // BambuPlotter: plotter panel swapped in for the normal sidebar sections
-    // (permanently — plotter-first); saved_3d_visibility can restore them.
-    PlotterPanel *plotter_panel = nullptr;
-    bool          plotter_mode  = false;
-    std::vector<std::pair<wxWindow *, bool>> saved_3d_visibility;
 
     int  FromDIP(int n) { return plater->FromDIP(n); }
     void layout_printer(bool isBBL, bool isDual);
@@ -3169,14 +3162,6 @@ Sidebar::Sidebar(Plater *parent)
     p->object_layers->Hide();
     p->sizer_params->Add(p->object_layers->get_sizer(), 0, wxEXPAND | wxTOP, 0);
 
-    // BambuPlotter is plotter-first: the plotter panel IS the sidebar. The
-    // 3D-print sections above stay constructed (presets and the plate
-    // pipeline depend on them) but are hidden by set_plotter_mode below.
-    p->plotter_panel = new PlotterPanel(p->scrolled);
-    p->plotter_panel->Show(false);
-    scrolled_sizer->Add(p->plotter_panel, 1, wxEXPAND);
-    set_plotter_mode(true);
-
     auto *sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(p->scrolled, 1, wxEXPAND);
     SetSizer(sizer);
@@ -4764,59 +4749,6 @@ wxPanel* Sidebar::print_panel()
 wxPanel* Sidebar::filament_panel()
 {
     return p->m_panel_filament_content;
-}
-
-// BambuPlotter ---------------------------------------------------------------
-
-static void plotter_collect_sizer_windows(wxSizer *sizer, std::vector<wxWindow *> &out)
-{
-    for (size_t i = 0; i < sizer->GetItemCount(); ++i) {
-        wxSizerItem *item = sizer->GetItem(i);
-        if (item->IsWindow())
-            out.push_back(item->GetWindow());
-        else if (item->IsSizer())
-            plotter_collect_sizer_windows(item->GetSizer(), out);
-    }
-}
-
-void Sidebar::set_plotter_mode(bool on)
-{
-    if (p->plotter_mode == on || p->plotter_panel == nullptr)
-        return;
-    p->plotter_mode = on;
-
-    if (on) {
-        // Hide every normal sidebar section, remembering its visibility so
-        // switching back restores the exact previous state.
-        p->saved_3d_visibility.clear();
-        std::vector<wxWindow *> windows;
-        plotter_collect_sizer_windows(m_scrolled_sizer, windows);
-        for (wxWindow *w : windows) {
-            if (w == p->plotter_panel)
-                continue;
-            p->saved_3d_visibility.emplace_back(w, w->IsShown());
-            w->Show(false);
-        }
-        p->plotter_panel->Show(true);
-    } else {
-        p->plotter_panel->Show(false);
-        for (auto &saved : p->saved_3d_visibility)
-            saved.first->Show(saved.second);
-        p->saved_3d_visibility.clear();
-    }
-    p->plotter_panel->set_active(on);
-    m_scrolled_sizer->Layout();
-    p->scrolled->Refresh();
-}
-
-bool Sidebar::is_plotter_mode() const
-{
-    return p->plotter_mode;
-}
-
-PlotterPanel* Sidebar::plotter_panel()
-{
-    return p->plotter_panel;
 }
 
 ConfigOptionsGroup* Sidebar::og_freq_chng_params(const bool is_fff)
@@ -18764,15 +18696,6 @@ bool Plater::try_sync_preset_with_connected_printer(int& nozzle_diameter)
 int Plater::load_project(wxString const &filename2,
     wxString const& originfile)
 {
-    // BambuPlotter: File > Open opens plotter projects (.bplot) or SVG
-    // artwork. Anything 3mf-like still falls through to the original loader
-    // so internal callers keep working.
-    if (sidebar().is_plotter_mode() && sidebar().plotter_panel() != nullptr) {
-        const wxString lower = filename2.Lower();
-        if (!lower.EndsWith(".3mf") && !lower.EndsWith(".amf"))
-            return sidebar().plotter_panel()->open_project_ui(filename2) ? wxID_YES : wxID_CANCEL;
-    }
-
     model().calib_pa_pattern.reset(nullptr);
     model().plates_custom_gcodes.clear();
 
@@ -18913,11 +18836,6 @@ int Plater::load_project(wxString const &filename2,
 // BBS: save logic
 int Plater::save_project(bool saveAs)
 {
-    // BambuPlotter: "the project" is the plotter project (.bplot); File >
-    // Save Project and Cmd+S go straight to the plotter panel.
-    if (sidebar().is_plotter_mode() && sidebar().plotter_panel() != nullptr)
-        return sidebar().plotter_panel()->save_project_ui(saveAs);
-
     //if (up_to_date(false, false)) // should we always save
     //    return;
     auto filename = get_project_filename(".3mf");

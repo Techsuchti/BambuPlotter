@@ -692,8 +692,6 @@ private:
     GLModel                               m_gridlines_bolder;
     GLModel                               m_plot_rect;
     bool                                  m_plot_rect_visible{false};
-    GLModel                               m_plot_paths;
-    bool                                  m_plot_paths_visible{false};
     GLModel                               m_del_icon;
     GLModel                               m_arrange_icon;
     GLModel                               m_orient_icon;
@@ -940,9 +938,6 @@ public:
     // Calibrated plotting-rectangle overlay. `rect_mm` is in plate coordinates
     // (mm); passing visible=false (or an empty rectangle) disables the overlay.
     void set_plot_rectangle(const BoundingBoxf& rect_mm, bool visible);
-    // Placed plotter strokes (pen positions on the bed, mm), drawn together
-    // with the plotting rectangle.
-    void set_plot_paths(const std::vector<std::vector<Vec2d>>& paths_mm, bool visible);
     void render_plot_rectangle();
     void render_wrapping_detection_area(bool force_default_color);
     void render_exclude_area(bool force_default_color);

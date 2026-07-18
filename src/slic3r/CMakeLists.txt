@@ -664,8 +664,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Plotter/PlotterCalibrationController.hpp
     GUI/Plotter/PlotterCalibrationDialog.cpp
     GUI/Plotter/PlotterCalibrationDialog.hpp
-    GUI/Plotter/PlotterPanel.cpp
-    GUI/Plotter/PlotterPanel.hpp
+    GUI/Plotter/PlotterModeDialog.cpp
+    GUI/Plotter/PlotterModeDialog.hpp
     GUI/Plotter/PlotterPrintJob.cpp
     GUI/Plotter/PlotterPrintJob.hpp
 )
