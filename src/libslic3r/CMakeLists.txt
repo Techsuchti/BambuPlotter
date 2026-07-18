@@ -293,6 +293,8 @@ set(lisbslic3r_sources
     Plotter/PlotterJobBuilder.cpp
     Plotter/PlotterJobBuilder.hpp
     Plotter/PlotterPath.hpp
+    Plotter/PlotterProject.cpp
+    Plotter/PlotterProject.hpp
     Plotter/PlotterSafetyValidator.cpp
     Plotter/PlotterSafetyValidator.hpp
     Plotter/PlotterToolProfile.cpp

@@ -7,6 +7,7 @@
 #include "libslic3r/Plotter/PlotterGCodeGenerator.hpp"
 #include "libslic3r/Plotter/PlotterJobBuilder.hpp"
 #include "libslic3r/Plotter/PlotterPath.hpp"
+#include "libslic3r/Plotter/PlotterProject.hpp"
 #include "libslic3r/Plotter/PlotterSafetyValidator.hpp"
 #include "libslic3r/Plotter/PlotterToolProfile.hpp"
 #include "libslic3r/Plotter/SvgPlotImporter.hpp"
@@ -519,6 +520,39 @@ TEST_CASE("Plotter: job builder refuses invalid input", "[Plotter]")
         CHECK_FALSE(job.ok);
         CHECK(job.error.find("missing resource") != std::string::npos);
     }
+}
+
+TEST_CASE("Plotter: project round-trip and placement", "[Plotter]")
+{
+    const std::string svg = R"(<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
+        <polyline points="0,0 20,0 20,20" fill="none" stroke="black" stroke-width="1"/>
+    </svg>)";
+
+    PlotterProject p;
+    p.svg_markup = svg;
+    p.doc_width = 100.; p.doc_height = 100.;
+    p.scale = 2.0;
+    p.offset = Vec2d(30., 40.);
+
+    // Raw import: first point at (0,100) after Y-flip.
+    const PlotPaths raw = p.import_paths();
+    REQUIRE(raw.size() == 1);
+    CHECK((raw.front().points.front() - Vec2d(0., 100.)).norm() < 1e-3);
+
+    // Placed: scaled x2 then shifted by (30,40).
+    const PlotPaths placed = p.placed_paths();
+    REQUIRE(placed.size() == 1);
+    CHECK((placed.front().points.front() - Vec2d(0. * 2 + 30., 100. * 2 + 40.)).norm() < 1e-3);
+
+    // JSON round-trip preserves placement and markup.
+    PlotterProject q;
+    std::string err;
+    REQUIRE(q.deserialize_json(p.serialize_json(), &err));
+    CHECK(err.empty());
+    CHECK(q.scale == Approx(2.0));
+    CHECK(q.offset == p.offset);
+    CHECK(q.svg_markup == svg);
+    CHECK(q.import_paths().size() == 1);
 }
 
 TEST_CASE("Plotter: cold 20mm square end-to-end (software half)", "[Plotter]")
