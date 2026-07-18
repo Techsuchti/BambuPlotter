@@ -1,4 +1,5 @@
 #include "MainFrame.hpp"
+#include "slic3r/GUI/Plotter/PlotterPanel.hpp"
 #include "GLToolbar.hpp"
 #include <wx/panel.h>
 #include <wx/notebook.h>
@@ -1233,9 +1234,6 @@ void MainFrame::update_title_colour_after_set_title()
 void MainFrame::show_option(bool show)
 {
     if (!this) { return; }
-    // BambuPlotter is plotter-first: the slice/print-plate actions (and the
-    // Helio promo) never apply, so the top-right action group stays hidden.
-    show = false;
     if (!show) {
         if (m_slice_btn->IsShown()) {
             m_slice_btn->Hide();
@@ -1248,12 +1246,10 @@ void MainFrame::show_option(bool show)
         }
     } else {
         if (!m_slice_btn->IsShown()) {
+            // BambuPlotter: Generate/Send plot are single actions — the
+            // slice/print dropdown variants and the Helio promo stay hidden.
             m_slice_btn->Show();
             m_print_btn->Show();
-            m_slice_option_btn->Show();
-            m_print_option_btn->Show();
-            split_line_icon->Show();
-            expand_program_holder->Show();
             Layout();
         }
     }
@@ -1474,6 +1470,9 @@ void MainFrame::init_tabpanel()
         m_tabpanel->AddPage(m_webview, "", "tab_home_active", "tab_home_active", false);
         m_tabpanel->SetPageToolTip(tpHome, _L("Home"));
         m_param_panel = new ParamsPanel(m_tabpanel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBK_LEFT | wxTAB_TRAVERSAL);
+        // BambuPlotter: the process-params panel has no role in plotting and
+        // keeps getting re-Shown by preset/tab events — clamp it hidden.
+        m_param_panel->set_force_hidden(true);
     }
 
     m_plater = new Plater(this, this);
@@ -1966,9 +1965,11 @@ wxBoxSizer* MainFrame::create_side_tools()
     auto slice_panel = new wxPanel(this,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxTRANSPARENT_WINDOW);
     auto print_panel = new wxPanel(this,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxTRANSPARENT_WINDOW);
 
-    m_slice_btn = new SideButton(slice_panel, _L("Slice plate"), "");
+    // BambuPlotter: the native two-step flow, plotter semantics — Generate
+    // plot ("slice") opens the pen path in Preview; Send plot uploads+starts.
+    m_slice_btn = new SideButton(slice_panel, _L("Generate plot"), "");
     m_slice_option_btn = new SideButton(slice_panel, "", "sidebutton_dropdown", 0, FromDIP(14));
-    m_print_btn = new SideButton(print_panel, _L("Print plate"), "");
+    m_print_btn = new SideButton(print_panel, _L("Send plot"), "");
     m_print_option_btn = new SideButton(print_panel, "", "sidebutton_dropdown", 0, FromDIP(14));
 
     auto slice_sizer = new wxBoxSizer(wxHORIZONTAL);
@@ -1984,9 +1985,7 @@ wxBoxSizer* MainFrame::create_side_tools()
     update_side_button_style();
     m_slice_option_btn->Enable();
     m_print_option_btn->Enable();
-    // BambuPlotter: hidden from the start (see show_option).
-    m_slice_btn->Hide();
-    m_print_btn->Hide();
+    // BambuPlotter: no slice/print variants, no Helio promo.
     m_slice_option_btn->Hide();
     m_print_option_btn->Hide();
     split_line_icon->Hide();
@@ -2043,6 +2042,14 @@ wxBoxSizer* MainFrame::create_side_tools()
 
     m_slice_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
         {
+            // BambuPlotter: generate the movement-only plot and open it in
+            // the Preview tab; the 3D slice pipeline below is never used.
+            if (m_plater && m_plater->sidebar().is_plotter_mode()) {
+                if (auto *panel = m_plater->sidebar().plotter_panel())
+                    panel->generate_plot();
+                return;
+            }
+
             if (m_plater->is_background_process_update_scheduled())
                 m_plater->update(false, true);
 
@@ -2133,6 +2140,13 @@ wxBoxSizer* MainFrame::create_side_tools()
 
     m_print_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
         {
+            // BambuPlotter: validate, upload and start the plot job.
+            if (m_plater && m_plater->sidebar().is_plotter_mode()) {
+                if (auto *panel = m_plater->sidebar().plotter_panel())
+                    panel->send_plot();
+                return;
+            }
+
             //this->m_plater->select_view_3D("Preview");
             if (m_print_select == ePrintAll || m_print_select == ePrintPlate || m_print_select == ePrintMultiMachine)
             {
@@ -2585,6 +2599,14 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
     }
 
     bool old_slice_status = m_slice_btn->IsEnabled();
+
+    // BambuPlotter: Generate/Send plot readiness is decided by the plotter
+    // panel (artwork + calibration), not the 3D slice pipeline — its checks
+    // would keep the buttons permanently disabled (no sliceable objects).
+    if (m_plater && m_plater->sidebar().is_plotter_mode()) {
+        enable_slice = true;
+        enable_print = true;
+    }
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(" m_slice_select %1%: can_slice= %2%, can_print %3%, enable_slice %4%, enable_print %5% ")%m_slice_select % can_slice %can_print %enable_slice %enable_print;
     m_print_btn->Enable(enable_print);

@@ -39,6 +39,12 @@ public:
     int  save_project_ui(bool save_as);
     bool open_project_ui(const wxString &filename);
 
+    // Native two-step flow, driven by the top-right MainFrame buttons:
+    // "Generate plot" (the plotter's slice — opens the pen path in Preview)
+    // and "Send plot" (validate, upload, start).
+    void generate_plot();
+    void send_plot();
+
 private:
     void build_ui();
     void refresh_ui();
@@ -53,8 +59,6 @@ private:
     void on_import_svg(wxCommandEvent &);
     void on_fit_to_area(wxCommandEvent &);
     void on_placement_changed();
-    void on_generate_preview(wxCommandEvent &);
-    void on_send(wxCommandEvent &);
 
     // Returns placed, optimized paths (paper space) or empty on failure.
     Plotter::PlotPaths build_placed_paths(std::string *error) const;
@@ -73,8 +77,6 @@ private:
     wxSpinCtrlDouble *m_offset_x_spin{nullptr};
     wxSpinCtrlDouble *m_offset_y_spin{nullptr};
     Button           *m_btn_fit{nullptr};
-    Button           *m_btn_preview{nullptr};
-    Button           *m_btn_send{nullptr};
     wxStaticText     *m_stats_label{nullptr};
     wxStaticText     *m_status_label{nullptr};
 };

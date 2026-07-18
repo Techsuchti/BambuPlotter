@@ -115,24 +115,10 @@ void PlotterPanel::build_ui()
     m_btn_fit->Bind(wxEVT_BUTTON, &PlotterPanel::on_fit_to_area, this);
     root->Add(m_btn_fit, 0, wxLEFT | wxTOP | wxBOTTOM, gap);
 
-    // --- Output -----------------------------------------------------------
-    // (Project open/save lives in the File menu, like any project.)
-    add_title(_L("Output"));
-    m_btn_preview = new Button(this, _L("Preview G-code"));
-    m_btn_preview->Bind(wxEVT_BUTTON, &PlotterPanel::on_generate_preview, this);
-    root->Add(m_btn_preview, 0, wxLEFT | wxTOP, gap);
-
-    // The one primary action in the panel, styled like the app's brand CTAs.
-    m_btn_send = new Button(this, _L("Send to printer"));
-    StateColor send_bg(std::pair<wxColour, int>(ThemeColor::BrandGreenPressed, StateColor::Pressed),
-                       std::pair<wxColour, int>(ThemeColor::BrandGreenHovered, StateColor::Hovered),
-                       std::pair<wxColour, int>(ThemeColor::BrandGreen, StateColor::Normal));
-    m_btn_send->SetBackgroundColor(send_bg);
-    m_btn_send->SetBorderColor(StateColor(std::pair<wxColour, int>(ThemeColor::BrandGreen, StateColor::Normal)));
-    m_btn_send->SetTextColor(StateColor(std::pair<wxColour, int>(*wxWHITE, StateColor::Normal)));
-    m_btn_send->Bind(wxEVT_BUTTON, &PlotterPanel::on_send, this);
-    root->Add(m_btn_send, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, gap);
-
+    // --- Status -----------------------------------------------------------
+    // Actions live where they always did: project open/save in the File
+    // menu, Generate plot / Send plot in the top-right MainFrame buttons.
+    add_title(_L("Status"));
     m_stats_label = new wxStaticText(this, wxID_ANY, "");
     root->Add(m_stats_label, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, gap);
     m_status_label = new wxStaticText(this, wxID_ANY, "");
@@ -227,9 +213,7 @@ void PlotterPanel::refresh_ui()
         m_source_label->SetLabelText(buf);
     }
     const bool ready = calibrated && m_has_project;
-    if (m_btn_preview) m_btn_preview->Enable(ready);
-    if (m_btn_send)    m_btn_send->Enable(ready);
-    if (m_btn_fit)     m_btn_fit->Enable(ready);
+    if (m_btn_fit) m_btn_fit->Enable(ready);
     Layout();
 }
 
@@ -377,8 +361,12 @@ bool PlotterPanel::open_project_ui(const wxString &filename)
     return true;
 }
 
-void PlotterPanel::on_generate_preview(wxCommandEvent &)
+void PlotterPanel::generate_plot()
 {
+    if (!m_has_project) {
+        set_status("Import an SVG first.");
+        return;
+    }
     if (!m_profile.is_valid()) {
         set_status("Calibration required before plotting.");
         return;
@@ -407,12 +395,20 @@ void PlotterPanel::on_generate_preview(wxCommandEvent &)
                   gen.path_count, gen.draw_length, gen.travel_length);
     m_stats_label->SetLabelText(stats);
     set_status("");
-    if (auto *plater = wxGetApp().plater())
+    if (auto *plater = wxGetApp().plater()) {
         plater->load_gcode(from_u8(preview_path));
+        // Mirror the native slice flow: show the result in the Preview tab.
+        if (auto *mainframe = wxGetApp().mainframe)
+            mainframe->select_tab(size_t(MainFrame::tpPreview));
+    }
 }
 
-void PlotterPanel::on_send(wxCommandEvent &)
+void PlotterPanel::send_plot()
 {
+    if (!m_has_project) {
+        set_status("Import an SVG first.");
+        return;
+    }
     if (!m_profile.is_valid()) {
         set_status("Calibration required before plotting.");
         return;
