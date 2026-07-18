@@ -1389,13 +1389,14 @@ void MainFrame::init_tabpanel()
         //wxString page_text = m_tabpanel->GetPageText(sel);
         m_last_selected_tab = m_tabpanel->GetSelection();
         if (panel == m_plater) {
+            // BambuPlotter: m_param_panel->OnActivate() re-Shows the process
+            // params panel inside the sidebar (set_active_tab calls Show());
+            // the plotter sidebar never uses it, so it stays inactive.
             if (sel == tp3DEditor) {
                 wxPostEvent(m_plater, SimpleEvent(EVT_GLVIEWTOOLBAR_3D));
-                m_param_panel->OnActivate();
             }
             else if (sel == tpPreview) {
                 wxPostEvent(m_plater, SimpleEvent(EVT_GLVIEWTOOLBAR_PREVIEW));
-                m_param_panel->OnActivate();
             }
         }
         //else if (panel == m_param_panel)

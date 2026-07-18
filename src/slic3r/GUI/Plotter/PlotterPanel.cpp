@@ -5,6 +5,7 @@
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem.hpp>
 
 #include "libslic3r/Plotter/PathOptimizer.hpp"
@@ -115,16 +116,8 @@ void PlotterPanel::build_ui()
     root->Add(m_btn_fit, 0, wxLEFT | wxTOP | wxBOTTOM, gap);
 
     // --- Output -----------------------------------------------------------
+    // (Project open/save lives in the File menu, like any project.)
     add_title(_L("Output"));
-    m_btn_open    = new Button(this, _L("Open project…"));
-    m_btn_save    = new Button(this, _L("Save project…"));
-    auto *project_row = new wxBoxSizer(wxHORIZONTAL);
-    project_row->Add(m_btn_open, 0, wxRIGHT, FromDIP(6));
-    project_row->Add(m_btn_save, 0);
-    root->Add(project_row, 0, wxLEFT | wxTOP, gap);
-    m_btn_open->Bind(wxEVT_BUTTON, &PlotterPanel::on_open_project, this);
-    m_btn_save->Bind(wxEVT_BUTTON, &PlotterPanel::on_save_project, this);
-
     m_btn_preview = new Button(this, _L("Preview G-code"));
     m_btn_preview->Bind(wxEVT_BUTTON, &PlotterPanel::on_generate_preview, this);
     root->Add(m_btn_preview, 0, wxLEFT | wxTOP, gap);
@@ -236,7 +229,6 @@ void PlotterPanel::refresh_ui()
     const bool ready = calibrated && m_has_project;
     if (m_btn_preview) m_btn_preview->Enable(ready);
     if (m_btn_send)    m_btn_send->Enable(ready);
-    if (m_btn_save)    m_btn_save->Enable(m_has_project);
     if (m_btn_fit)     m_btn_fit->Enable(ready);
     Layout();
 }
@@ -260,18 +252,25 @@ void PlotterPanel::on_import_svg(wxCommandEvent &)
                     wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (fd.ShowModal() != wxID_OK)
         return;
+    import_svg_path(into_u8(fd.GetPath()));
+}
+
+bool PlotterPanel::import_svg_path(const std::string &path)
+{
     std::string err;
-    PlotterProject proj = PlotterProject::from_svg_file(into_u8(fd.GetPath()), SvgImportOptions{}, &err);
+    PlotterProject proj = PlotterProject::from_svg_file(path, SvgImportOptions{}, &err);
     if (!err.empty()) {
         set_status(err);
-        return;
+        return false;
     }
     m_project     = std::move(proj);
     m_has_project = true;
+    m_project_path.clear(); // new, unsaved project
     set_status("");
     fit_to_area(); // sensible default placement
     refresh_ui();
     update_plate_overlay();
+    return true;
 }
 
 void PlotterPanel::fit_to_area()
@@ -319,43 +318,63 @@ PlotPaths PlotterPanel::build_placed_paths(std::string *error) const
     return PathOptimizer::optimize(std::move(placed), Vec2d(0., 0.));
 }
 
-void PlotterPanel::on_save_project(wxCommandEvent &)
+int PlotterPanel::save_project_ui(bool save_as)
 {
-    if (!m_has_project)
-        return;
-    boost::system::error_code ec;
-    boost::filesystem::create_directories(projects_dir(), ec);
-    wxFileDialog fd(this, _L("Save plotter project"), projects_dir(), "plot.bplot",
-                    "BambuPlotter project (*.bplot)|*.bplot", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
-    if (fd.ShowModal() != wxID_OK)
-        return;
+    if (!m_has_project) {
+        set_status("nothing to save — import an SVG first");
+        return wxID_CANCEL;
+    }
+    std::string path = m_project_path;
+    if (save_as || path.empty()) {
+        boost::system::error_code ec;
+        boost::filesystem::create_directories(projects_dir(), ec);
+        wxFileDialog fd(this, _L("Save plotter project"), projects_dir(), "plot.bplot",
+                        "BambuPlotter project (*.bplot)|*.bplot", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+        if (fd.ShowModal() != wxID_OK)
+            return wxID_CANCEL;
+        path = into_u8(fd.GetPath());
+    }
     std::string err;
-    if (!m_project.save(into_u8(fd.GetPath()), &err))
+    if (!m_project.save(path, &err)) {
         set_status(err);
-    else
-        set_status("");
+        return wxID_CANCEL;
+    }
+    m_project_path = path;
+    set_status("");
+    return wxID_YES;
 }
 
-void PlotterPanel::on_open_project(wxCommandEvent &)
+bool PlotterPanel::open_project_ui(const wxString &filename)
 {
-    wxFileDialog fd(this, _L("Open plotter project"), projects_dir(), "",
-                    "BambuPlotter project (*.bplot)|*.bplot", wxFD_OPEN | wxFD_FILE_MUST_EXIST);
-    if (fd.ShowModal() != wxID_OK)
-        return;
+    std::string path = into_u8(filename);
+    if (path.empty()) {
+        wxFileDialog fd(this, _L("Open plotter project or SVG"), projects_dir(), "",
+                        "Plotter files (*.bplot;*.svg)|*.bplot;*.svg|"
+                        "BambuPlotter project (*.bplot)|*.bplot|SVG files (*.svg)|*.svg",
+                        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+        if (fd.ShowModal() != wxID_OK)
+            return false;
+        path = into_u8(fd.GetPath());
+    }
+    if (boost::algorithm::iends_with(path, ".svg"))
+        return import_svg_path(path);
+
     std::string err;
     PlotterProject proj;
-    if (!proj.load(into_u8(fd.GetPath()), &err)) {
+    if (!proj.load(path, &err)) {
         set_status(err);
-        return;
+        return false;
     }
-    m_project     = std::move(proj);
-    m_has_project = true;
+    m_project      = std::move(proj);
+    m_has_project  = true;
+    m_project_path = path;
     if (m_scale_spin)    m_scale_spin->SetValue(m_project.scale);
     if (m_offset_x_spin) m_offset_x_spin->SetValue(m_project.offset.x());
     if (m_offset_y_spin) m_offset_y_spin->SetValue(m_project.offset.y());
     set_status("");
     refresh_ui();
     update_plate_overlay();
+    return true;
 }
 
 void PlotterPanel::on_generate_preview(wxCommandEvent &)

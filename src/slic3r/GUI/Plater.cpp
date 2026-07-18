@@ -4814,6 +4814,11 @@ bool Sidebar::is_plotter_mode() const
     return p->plotter_mode;
 }
 
+PlotterPanel* Sidebar::plotter_panel()
+{
+    return p->plotter_panel;
+}
+
 ConfigOptionsGroup* Sidebar::og_freq_chng_params(const bool is_fff)
 {
     // BBS
@@ -18759,6 +18764,15 @@ bool Plater::try_sync_preset_with_connected_printer(int& nozzle_diameter)
 int Plater::load_project(wxString const &filename2,
     wxString const& originfile)
 {
+    // BambuPlotter: File > Open opens plotter projects (.bplot) or SVG
+    // artwork. Anything 3mf-like still falls through to the original loader
+    // so internal callers keep working.
+    if (sidebar().is_plotter_mode() && sidebar().plotter_panel() != nullptr) {
+        const wxString lower = filename2.Lower();
+        if (!lower.EndsWith(".3mf") && !lower.EndsWith(".amf"))
+            return sidebar().plotter_panel()->open_project_ui(filename2) ? wxID_YES : wxID_CANCEL;
+    }
+
     model().calib_pa_pattern.reset(nullptr);
     model().plates_custom_gcodes.clear();
 
@@ -18899,6 +18913,11 @@ int Plater::load_project(wxString const &filename2,
 // BBS: save logic
 int Plater::save_project(bool saveAs)
 {
+    // BambuPlotter: "the project" is the plotter project (.bplot); File >
+    // Save Project and Cmd+S go straight to the plotter panel.
+    if (sidebar().is_plotter_mode() && sidebar().plotter_panel() != nullptr)
+        return sidebar().plotter_panel()->save_project_ui(saveAs);
+
     //if (up_to_date(false, false)) // should we always save
     //    return;
     auto filename = get_project_filename(".3mf");

@@ -107,7 +107,9 @@ bool View3D::init(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig
     m_canvas->set_config(config);
     m_canvas->enable_gizmos(true);
     m_canvas->enable_selection(true);
-    m_canvas->enable_main_toolbar(true);
+    // BambuPlotter: the 3D-object toolbar (add/arrange/split/text...) has no
+    // role in pen plotting — the plotter sidebar covers everything.
+    m_canvas->enable_main_toolbar(false);
     m_canvas->enable_return_toolbar(true);
     //BBS: GUI refactor: GLToolbar
     m_canvas->enable_select_plate_toolbar(false);

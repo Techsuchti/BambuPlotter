@@ -135,6 +135,8 @@ wxDECLARE_EVENT(EVT_GCODE_VIEWER_CHANGED, SimpleEvent);
 
 const wxString DEFAULT_PROJECT_NAME = "Untitled";
 
+class PlotterPanel;
+
 class Sidebar : public wxPanel
 {
     ConfigOptionMode    m_mode;
@@ -224,9 +226,10 @@ public:
     wxPanel* filament_panel();
 
     // BambuPlotter: swap the sidebar between the normal 3D-print sections and
-    // the plotter panel; driven by the mode switch at the top of the sidebar.
+    // the plotter panel (permanently on — plotter-first).
     void set_plotter_mode(bool on);
     bool is_plotter_mode() const;
+    PlotterPanel* plotter_panel();
 
     ConfigOptionsGroup*     og_freq_chng_params(const bool is_fff);
     wxButton*               get_wiping_dialog_button();
