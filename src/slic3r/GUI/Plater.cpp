@@ -159,7 +159,6 @@
 #include "Widgets/ComboBox.hpp"
 #include "Widgets/StaticGroup.hpp"
 #include "Widgets/MultiNozzleSync.hpp"
-#include "Widgets/SwitchButton.hpp"
 #include "Plotter/PlotterPanel.hpp"
 
 #include "GUI_ObjectTable.hpp"
@@ -674,9 +673,8 @@ struct Sidebar::priv
     ExtruderGroup *right_extruder = nullptr;
     ExtruderGroup *single_extruder = nullptr;
 
-    // BambuPlotter: mode switch + plotter panel swapped in for the normal
-    // sidebar sections; saved_3d_visibility restores them on switch-back.
-    SwitchBoard  *mode_switch   = nullptr;
+    // BambuPlotter: plotter panel swapped in for the normal sidebar sections
+    // (permanently — plotter-first); saved_3d_visibility can restore them.
     PlotterPanel *plotter_panel = nullptr;
     bool          plotter_mode  = false;
     std::vector<std::pair<wxWindow *, bool>> saved_3d_visibility;
@@ -2452,17 +2450,6 @@ Sidebar::Sidebar(Plater *parent)
     p->scrolled->SetDoubleBuffered(true);
 #endif //__WINDOWS__
 
-    // BambuPlotter: mode switch at the very top of the sidebar.
-    {
-        p->mode_switch = new SwitchBoard(p->scrolled, _L("3D Print"), _L("Plotter"),
-                                         wxSize(FromDIP(220), FromDIP(28)));
-        p->mode_switch->updateState("left");
-        p->mode_switch->Bind(wxCUSTOMEVT_SWITCH_POS, [this](wxCommandEvent &evt) {
-            set_plotter_mode(evt.GetInt() == 0); // right = Plotter
-        });
-        scrolled_sizer->Add(p->mode_switch, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP | wxBOTTOM, FromDIP(6));
-    }
-
     // add printer
     {
         /***************** 1. create printer title bar    **************/
@@ -3182,10 +3169,13 @@ Sidebar::Sidebar(Plater *parent)
     p->object_layers->Hide();
     p->sizer_params->Add(p->object_layers->get_sizer(), 0, wxEXPAND | wxTOP, 0);
 
-    // BambuPlotter: plotter-mode panel, swapped in for the sections above.
+    // BambuPlotter is plotter-first: the plotter panel IS the sidebar. The
+    // 3D-print sections above stay constructed (presets and the plate
+    // pipeline depend on them) but are hidden by set_plotter_mode below.
     p->plotter_panel = new PlotterPanel(p->scrolled);
     p->plotter_panel->Show(false);
     scrolled_sizer->Add(p->plotter_panel, 1, wxEXPAND);
+    set_plotter_mode(true);
 
     auto *sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(p->scrolled, 1, wxEXPAND);
@@ -4802,7 +4792,7 @@ void Sidebar::set_plotter_mode(bool on)
         std::vector<wxWindow *> windows;
         plotter_collect_sizer_windows(m_scrolled_sizer, windows);
         for (wxWindow *w : windows) {
-            if (w == p->mode_switch || w == p->plotter_panel)
+            if (w == p->plotter_panel)
                 continue;
             p->saved_3d_visibility.emplace_back(w, w->IsShown());
             w->Show(false);
@@ -4815,8 +4805,6 @@ void Sidebar::set_plotter_mode(bool on)
         p->saved_3d_visibility.clear();
     }
     p->plotter_panel->set_active(on);
-    if (p->mode_switch)
-        p->mode_switch->updateState(on ? "right" : "left");
     m_scrolled_sizer->Layout();
     p->scrolled->Refresh();
 }

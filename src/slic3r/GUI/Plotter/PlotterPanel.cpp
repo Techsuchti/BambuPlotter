@@ -21,6 +21,8 @@
 #include "slic3r/GUI/Plater.hpp"
 #include "slic3r/GUI/Widgets/Button.hpp"
 #include "slic3r/GUI/Widgets/Label.hpp"
+#include "slic3r/GUI/Widgets/StaticBox.hpp"
+#include "slic3r/GUI/Widgets/StaticLine.hpp"
 #include "slic3r/GUI/Plotter/PlotterCalibrationController.hpp"
 #include "slic3r/GUI/Plotter/PlotterCalibrationDialog.hpp"
 #include "slic3r/GUI/Plotter/PlotterPrintJob.hpp"
@@ -30,23 +32,6 @@ using namespace Slic3r::Plotter;
 namespace Slic3r { namespace GUI {
 
 namespace {
-
-void style_primary_button(Button *btn)
-{
-    StateColor bg(std::pair<wxColour, int>(wxColour(27, 96, 136), StateColor::Pressed),
-                  std::pair<wxColour, int>(wxColour(90, 120, 145), StateColor::Hovered),
-                  std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
-    btn->SetBackgroundColor(bg);
-    btn->SetBorderColor(StateColor(std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal)));
-    btn->SetTextColor(StateColor(std::pair<wxColour, int>(*wxWHITE, StateColor::Normal)));
-}
-
-wxStaticText *section(wxWindow *p, const wxString &t)
-{
-    auto *s = new wxStaticText(p, wxID_ANY, t);
-    s->SetFont(Label::Head_14);
-    return s;
-}
 
 std::string projects_dir()
 {
@@ -68,69 +53,97 @@ PlotterPanel::PlotterPanel(wxWindow *parent)
 
 void PlotterPanel::build_ui()
 {
+    const int em  = wxGetApp().em_unit();
+    const int gap = FromDIP(10);
+
     auto *root = new wxBoxSizer(wxVERTICAL);
-    const int gap = FromDIP(8);
 
-    // --- calibration status --------------------------------------------
-    root->Add(section(this, _L("1. Calibration")), 0, wxLEFT | wxTOP, gap);
+    // Section title bars mirroring the native sidebar sections
+    // ("Printer" / "Project Filaments" / "Process").
+    auto add_title = [&](const wxString &text) {
+        auto *bar = new StaticBox(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                                  wxTAB_TRAVERSAL | wxBORDER_NONE);
+        bar->SetBackgroundColor(wxColour(248, 248, 248));
+        bar->SetBackgroundColor2(0xF1F1F1);
+        auto *label = new Label(bar, text);
+        auto *h     = new wxBoxSizer(wxHORIZONTAL);
+        h->Add(label, 0, wxALIGN_CENTER | wxLEFT, em);
+        h->SetMinSize(-1, 3 * em);
+        bar->SetSizer(h);
+        root->Add(bar, 0, wxEXPAND);
+        auto *line = new ::StaticLine(this);
+        line->SetLineColour("#CECECE");
+        root->Add(line, 0, wxEXPAND);
+    };
+
+    // --- Calibration ------------------------------------------------------
+    add_title(_L("Calibration"));
     m_profile_label = new wxStaticText(this, wxID_ANY, "");
-    root->Add(m_profile_label, 0, wxEXPAND | wxLEFT | wxRIGHT, gap);
+    root->Add(m_profile_label, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, gap);
     m_btn_calibrate = new Button(this, _L("Calibrate…"));
-    style_primary_button(m_btn_calibrate);
     m_btn_calibrate->Bind(wxEVT_BUTTON, &PlotterPanel::on_calibrate, this);
-    root->Add(m_btn_calibrate, 0, wxEXPAND | wxALL, gap);
+    root->Add(m_btn_calibrate, 0, wxLEFT | wxTOP | wxBOTTOM, gap);
 
-    // --- SVG import -----------------------------------------------------
-    root->Add(section(this, _L("2. Artwork")), 0, wxLEFT | wxTOP, gap);
+    // --- Artwork ----------------------------------------------------------
+    add_title(_L("Artwork"));
     m_btn_import = new Button(this, _L("Import SVG…"));
-    style_primary_button(m_btn_import);
     m_btn_import->Bind(wxEVT_BUTTON, &PlotterPanel::on_import_svg, this);
-    root->Add(m_btn_import, 0, wxEXPAND | wxALL, gap);
+    root->Add(m_btn_import, 0, wxLEFT | wxTOP, gap);
     m_source_label = new wxStaticText(this, wxID_ANY, _L("No artwork imported."));
-    root->Add(m_source_label, 0, wxEXPAND | wxLEFT | wxRIGHT, gap);
+    root->Add(m_source_label, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, gap);
 
-    // --- placement ------------------------------------------------------
-    root->Add(section(this, _L("3. Placement (mm)")), 0, wxLEFT | wxTOP, gap);
-    auto *pgrid = new wxFlexGridSizer(3, 2, FromDIP(4), FromDIP(8));
-    pgrid->AddGrowableCol(1);
+    // --- Placement --------------------------------------------------------
+    add_title(_L("Placement"));
+    auto *pgrid = new wxFlexGridSizer(3, 2, FromDIP(6), FromDIP(8));
     auto add_spin = [&](const wxString &label, double init, double lo, double hi) {
         pgrid->Add(new wxStaticText(this, wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
-        auto *s = new wxSpinCtrlDouble(this, wxID_ANY);
+        auto *s = new wxSpinCtrlDouble(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                       wxSize(FromDIP(110), -1));
         s->SetRange(lo, hi);
         s->SetDigits(2);
         s->SetValue(init);
         s->Bind(wxEVT_SPINCTRLDOUBLE, [this](wxSpinDoubleEvent &) { on_placement_changed(); });
-        pgrid->Add(s, 0, wxEXPAND);
+        pgrid->Add(s, 0);
         return s;
     };
-    m_scale_spin    = add_spin(_L("Scale"),    1.0, 0.01, 20.0);
-    m_offset_x_spin = add_spin(_L("Offset X"), 0.0, -300.0, 300.0);
-    m_offset_y_spin = add_spin(_L("Offset Y"), 0.0, -300.0, 300.0);
-    root->Add(pgrid, 0, wxEXPAND | wxALL, gap);
+    m_scale_spin    = add_spin(_L("Scale"),         1.0, 0.01, 20.0);
+    m_offset_x_spin = add_spin(_L("Offset X (mm)"), 0.0, -300.0, 300.0);
+    m_offset_y_spin = add_spin(_L("Offset Y (mm)"), 0.0, -300.0, 300.0);
+    root->Add(pgrid, 0, wxLEFT | wxRIGHT | wxTOP, gap);
     m_btn_fit = new Button(this, _L("Fit to plotting area"));
-    style_primary_button(m_btn_fit);
     m_btn_fit->Bind(wxEVT_BUTTON, &PlotterPanel::on_fit_to_area, this);
-    root->Add(m_btn_fit, 0, wxEXPAND | wxALL, gap);
+    root->Add(m_btn_fit, 0, wxLEFT | wxTOP | wxBOTTOM, gap);
 
-    // --- project + output ----------------------------------------------
-    root->Add(section(this, _L("4. Project & output")), 0, wxLEFT | wxTOP, gap);
+    // --- Output -----------------------------------------------------------
+    add_title(_L("Output"));
     m_btn_open    = new Button(this, _L("Open project…"));
     m_btn_save    = new Button(this, _L("Save project…"));
-    m_btn_preview = new Button(this, _L("Preview G-code"));
-    m_btn_send    = new Button(this, _L("Send to printer"));
-    for (Button *b : {m_btn_open, m_btn_save, m_btn_preview, m_btn_send}) {
-        style_primary_button(b);
-        root->Add(b, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, gap);
-    }
+    auto *project_row = new wxBoxSizer(wxHORIZONTAL);
+    project_row->Add(m_btn_open, 0, wxRIGHT, FromDIP(6));
+    project_row->Add(m_btn_save, 0);
+    root->Add(project_row, 0, wxLEFT | wxTOP, gap);
     m_btn_open->Bind(wxEVT_BUTTON, &PlotterPanel::on_open_project, this);
     m_btn_save->Bind(wxEVT_BUTTON, &PlotterPanel::on_save_project, this);
+
+    m_btn_preview = new Button(this, _L("Preview G-code"));
     m_btn_preview->Bind(wxEVT_BUTTON, &PlotterPanel::on_generate_preview, this);
+    root->Add(m_btn_preview, 0, wxLEFT | wxTOP, gap);
+
+    // The one primary action in the panel, styled like the app's brand CTAs.
+    m_btn_send = new Button(this, _L("Send to printer"));
+    StateColor send_bg(std::pair<wxColour, int>(ThemeColor::BrandGreenPressed, StateColor::Pressed),
+                       std::pair<wxColour, int>(ThemeColor::BrandGreenHovered, StateColor::Hovered),
+                       std::pair<wxColour, int>(ThemeColor::BrandGreen, StateColor::Normal));
+    m_btn_send->SetBackgroundColor(send_bg);
+    m_btn_send->SetBorderColor(StateColor(std::pair<wxColour, int>(ThemeColor::BrandGreen, StateColor::Normal)));
+    m_btn_send->SetTextColor(StateColor(std::pair<wxColour, int>(*wxWHITE, StateColor::Normal)));
     m_btn_send->Bind(wxEVT_BUTTON, &PlotterPanel::on_send, this);
+    root->Add(m_btn_send, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, gap);
 
     m_stats_label = new wxStaticText(this, wxID_ANY, "");
     root->Add(m_stats_label, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, gap);
     m_status_label = new wxStaticText(this, wxID_ANY, "");
-    m_status_label->SetForegroundColour(wxColour(200, 60, 60));
+    m_status_label->SetForegroundColour(ThemeColor::Danger);
     root->Add(m_status_label, 0, wxEXPAND | wxALL, gap);
     root->AddStretchSpacer();
 

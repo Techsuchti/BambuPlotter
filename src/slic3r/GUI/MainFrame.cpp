@@ -1233,6 +1233,9 @@ void MainFrame::update_title_colour_after_set_title()
 void MainFrame::show_option(bool show)
 {
     if (!this) { return; }
+    // BambuPlotter is plotter-first: the slice/print-plate actions (and the
+    // Helio promo) never apply, so the top-right action group stays hidden.
+    show = false;
     if (!show) {
         if (m_slice_btn->IsShown()) {
             m_slice_btn->Hide();
@@ -1980,6 +1983,13 @@ wxBoxSizer* MainFrame::create_side_tools()
     update_side_button_style();
     m_slice_option_btn->Enable();
     m_print_option_btn->Enable();
+    // BambuPlotter: hidden from the start (see show_option).
+    m_slice_btn->Hide();
+    m_print_btn->Hide();
+    m_slice_option_btn->Hide();
+    m_print_option_btn->Hide();
+    split_line_icon->Hide();
+    expand_program_holder->Hide();
     sizer->Add( 0, 0, 1, wxEXPAND, 0);
     sizer->Add(expand_program_holder, 0, wxALIGN_CENTER, 0);
     sizer->Add(FromDIP(4), 0, 0, 0, 0);
