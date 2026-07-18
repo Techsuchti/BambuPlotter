@@ -4286,6 +4286,27 @@ void PartPlateList::set_plot_rectangle(const BoundingBoxf &rect_mm, bool visible
     }
 }
 
+void PartPlateList::set_plot_paths(const std::vector<std::vector<Vec2d>> &paths_mm, bool visible)
+{
+    m_plot_paths.reset();
+    m_plot_paths_visible = false;
+    if (!visible)
+        return;
+
+    Lines path_lines;
+    for (const std::vector<Vec2d> &path : paths_mm)
+        for (size_t i = 1; i < path.size(); ++i)
+            path_lines.emplace_back(Point(scale_(path[i - 1].x()), scale_(path[i - 1].y())),
+                                    Point(scale_(path[i].x()), scale_(path[i].y())));
+    if (path_lines.empty())
+        return;
+
+    if (!m_plot_paths.init_model_from_lines(path_lines, GROUND_Z))
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": Unable to create plot path lines\n";
+    else
+        m_plot_paths_visible = true;
+}
+
 void PartPlateList::calc_vertex_for_number(int index, bool one_number, GLModel &gl_model)
 {
     ExPolygon poly;
@@ -6268,14 +6289,21 @@ void PartPlateList::render_grid(bool bottom)
 
 void PartPlateList::render_plot_rectangle()
 {
-    if (!m_plot_rect_visible || !m_plot_rect.is_initialized())
-        return;
     const auto &p_ogl_manager = wxGetApp().get_opengl_manager();
-    p_ogl_manager->set_line_width(2.0f * m_scale_factor);
-    // slate accent
-    const ColorRGBA plot_rect_color{0.43f, 0.55f, 0.63f, 1.0f};
-    m_plot_rect.set_color(plot_rect_color);
-    m_plot_rect.render_geometry();
+    if (m_plot_rect_visible && m_plot_rect.is_initialized()) {
+        p_ogl_manager->set_line_width(2.0f * m_scale_factor);
+        // slate accent
+        const ColorRGBA plot_rect_color{0.43f, 0.55f, 0.63f, 1.0f};
+        m_plot_rect.set_color(plot_rect_color);
+        m_plot_rect.render_geometry();
+    }
+    if (m_plot_paths_visible && m_plot_paths.is_initialized()) {
+        p_ogl_manager->set_line_width(1.5f * m_scale_factor);
+        // ink strokes
+        const ColorRGBA plot_path_color{0.15f, 0.17f, 0.20f, 1.0f};
+        m_plot_paths.set_color(plot_path_color);
+        m_plot_paths.render_geometry();
+    }
 }
 
 void PartPlateList::render_instance_grid(bool bottom)

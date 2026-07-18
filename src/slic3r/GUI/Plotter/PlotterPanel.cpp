@@ -1,4 +1,4 @@
-#include "PlotterModeDialog.hpp"
+#include "PlotterPanel.hpp"
 
 #include <wx/filedlg.h>
 #include <wx/sizer.h>
@@ -12,10 +12,12 @@
 #include "libslic3r/Plotter/PlotterJobBuilder.hpp"
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/DeviceManager.hpp"
+#include "slic3r/GUI/DeviceCore/DevManager.h"
 #include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
+#include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Plater.hpp"
 #include "slic3r/GUI/Widgets/Button.hpp"
 #include "slic3r/GUI/Widgets/Label.hpp"
@@ -53,17 +55,18 @@ std::string projects_dir()
 
 } // namespace
 
-PlotterModeDialog::PlotterModeDialog(wxWindow *parent, MachineObject *machine)
-    : DPIDialog(parent, wxID_ANY, _L("Plotter Mode"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE)
-    , m_machine(machine)
+PlotterPanel::PlotterPanel(wxWindow *parent)
+    : wxPanel(parent, wxID_ANY)
 {
+    // No plater access here: the panel is constructed while the Plater itself
+    // is still being built. Anything touching the plate waits for set_active.
     m_profile.load(PlotterCalibrationController::profile_path());
     SetBackgroundColour(*wxWHITE);
     build_ui();
     refresh_ui();
 }
 
-void PlotterModeDialog::build_ui()
+void PlotterPanel::build_ui()
 {
     auto *root = new wxBoxSizer(wxVERTICAL);
     const int gap = FromDIP(8);
@@ -71,24 +74,25 @@ void PlotterModeDialog::build_ui()
     // --- calibration status --------------------------------------------
     root->Add(section(this, _L("1. Calibration")), 0, wxLEFT | wxTOP, gap);
     m_profile_label = new wxStaticText(this, wxID_ANY, "");
-    root->Add(m_profile_label, 0, wxLEFT | wxRIGHT, gap);
+    root->Add(m_profile_label, 0, wxEXPAND | wxLEFT | wxRIGHT, gap);
     m_btn_calibrate = new Button(this, _L("Calibrate…"));
     style_primary_button(m_btn_calibrate);
-    m_btn_calibrate->Bind(wxEVT_BUTTON, &PlotterModeDialog::on_calibrate, this);
-    root->Add(m_btn_calibrate, 0, wxALL, gap);
+    m_btn_calibrate->Bind(wxEVT_BUTTON, &PlotterPanel::on_calibrate, this);
+    root->Add(m_btn_calibrate, 0, wxEXPAND | wxALL, gap);
 
     // --- SVG import -----------------------------------------------------
     root->Add(section(this, _L("2. Artwork")), 0, wxLEFT | wxTOP, gap);
     m_btn_import = new Button(this, _L("Import SVG…"));
     style_primary_button(m_btn_import);
-    m_btn_import->Bind(wxEVT_BUTTON, &PlotterModeDialog::on_import_svg, this);
-    root->Add(m_btn_import, 0, wxALL, gap);
+    m_btn_import->Bind(wxEVT_BUTTON, &PlotterPanel::on_import_svg, this);
+    root->Add(m_btn_import, 0, wxEXPAND | wxALL, gap);
     m_source_label = new wxStaticText(this, wxID_ANY, _L("No artwork imported."));
-    root->Add(m_source_label, 0, wxLEFT | wxRIGHT, gap);
+    root->Add(m_source_label, 0, wxEXPAND | wxLEFT | wxRIGHT, gap);
 
     // --- placement ------------------------------------------------------
     root->Add(section(this, _L("3. Placement (mm)")), 0, wxLEFT | wxTOP, gap);
     auto *pgrid = new wxFlexGridSizer(3, 2, FromDIP(4), FromDIP(8));
+    pgrid->AddGrowableCol(1);
     auto add_spin = [&](const wxString &label, double init, double lo, double hi) {
         pgrid->Add(new wxStaticText(this, wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
         auto *s = new wxSpinCtrlDouble(this, wxID_ANY);
@@ -96,58 +100,112 @@ void PlotterModeDialog::build_ui()
         s->SetDigits(2);
         s->SetValue(init);
         s->Bind(wxEVT_SPINCTRLDOUBLE, [this](wxSpinDoubleEvent &) { on_placement_changed(); });
-        pgrid->Add(s, 0);
+        pgrid->Add(s, 0, wxEXPAND);
         return s;
     };
     m_scale_spin    = add_spin(_L("Scale"),    1.0, 0.01, 20.0);
     m_offset_x_spin = add_spin(_L("Offset X"), 0.0, -300.0, 300.0);
     m_offset_y_spin = add_spin(_L("Offset Y"), 0.0, -300.0, 300.0);
-    root->Add(pgrid, 0, wxALL, gap);
+    root->Add(pgrid, 0, wxEXPAND | wxALL, gap);
     m_btn_fit = new Button(this, _L("Fit to plotting area"));
     style_primary_button(m_btn_fit);
-    m_btn_fit->Bind(wxEVT_BUTTON, &PlotterModeDialog::on_fit_to_area, this);
-    root->Add(m_btn_fit, 0, wxALL, gap);
+    m_btn_fit->Bind(wxEVT_BUTTON, &PlotterPanel::on_fit_to_area, this);
+    root->Add(m_btn_fit, 0, wxEXPAND | wxALL, gap);
 
     // --- project + output ----------------------------------------------
     root->Add(section(this, _L("4. Project & output")), 0, wxLEFT | wxTOP, gap);
-    auto *brow = new wxBoxSizer(wxHORIZONTAL);
     m_btn_open    = new Button(this, _L("Open project…"));
     m_btn_save    = new Button(this, _L("Save project…"));
     m_btn_preview = new Button(this, _L("Preview G-code"));
     m_btn_send    = new Button(this, _L("Send to printer"));
     for (Button *b : {m_btn_open, m_btn_save, m_btn_preview, m_btn_send}) {
         style_primary_button(b);
-        brow->Add(b, 0, wxRIGHT, gap);
+        root->Add(b, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, gap);
     }
-    m_btn_open->Bind(wxEVT_BUTTON, &PlotterModeDialog::on_open_project, this);
-    m_btn_save->Bind(wxEVT_BUTTON, &PlotterModeDialog::on_save_project, this);
-    m_btn_preview->Bind(wxEVT_BUTTON, &PlotterModeDialog::on_generate_preview, this);
-    m_btn_send->Bind(wxEVT_BUTTON, &PlotterModeDialog::on_send, this);
-    root->Add(brow, 0, wxALL, gap);
+    m_btn_open->Bind(wxEVT_BUTTON, &PlotterPanel::on_open_project, this);
+    m_btn_save->Bind(wxEVT_BUTTON, &PlotterPanel::on_save_project, this);
+    m_btn_preview->Bind(wxEVT_BUTTON, &PlotterPanel::on_generate_preview, this);
+    m_btn_send->Bind(wxEVT_BUTTON, &PlotterPanel::on_send, this);
 
     m_stats_label = new wxStaticText(this, wxID_ANY, "");
-    root->Add(m_stats_label, 0, wxLEFT | wxRIGHT, gap);
+    root->Add(m_stats_label, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, gap);
     m_status_label = new wxStaticText(this, wxID_ANY, "");
     m_status_label->SetForegroundColour(wxColour(200, 60, 60));
-    root->Add(m_status_label, 0, wxALL, gap);
+    root->Add(m_status_label, 0, wxEXPAND | wxALL, gap);
+    root->AddStretchSpacer();
 
-    SetSizerAndFit(root);
+    SetSizer(root);
 }
 
-void PlotterModeDialog::set_status(const std::string &msg)
+void PlotterPanel::set_active(bool active)
 {
-    if (m_status_label) m_status_label->SetLabelText(from_u8(msg));
+    m_active = active;
+    if (active) {
+        // Re-read the profile: calibration may have run since construction.
+        m_profile = Plotter::PlotterToolProfile();
+        m_profile.load(PlotterCalibrationController::profile_path());
+        refresh_ui();
+    }
+    update_plate_overlay();
+}
+
+MachineObject *PlotterPanel::selected_machine() const
+{
+    if (Slic3r::DeviceManager *dev = wxGetApp().getDeviceManager())
+        return dev->get_selected_machine();
+    return nullptr;
+}
+
+void PlotterPanel::update_plate_overlay()
+{
+    Plater *plater = wxGetApp().plater();
+    if (plater == nullptr)
+        return;
+    PartPlateList &plates = plater->get_partplate_list();
+
+    const bool show_rect = m_active && m_profile.is_valid();
+    plates.set_plot_rectangle(show_rect ? m_profile.pen_rect_on_bed() : BoundingBoxf(), show_rect);
+
+    // Placed strokes as PEN positions on the bed (same transform as the
+    // rectangle: machine coords + pen offset).
+    std::vector<std::vector<Vec2d>> strokes;
+    if (show_rect && m_has_project) {
+        std::string err;
+        PlotPaths placed = m_project.placed_paths(&err);
+        const Vec2d to_bed = m_profile.paper_origin + m_profile.pen_offset;
+        for (const PlotPath &path : placed) {
+            std::vector<Vec2d> pts;
+            pts.reserve(path.points.size() + 1);
+            for (const Vec2d &pt : path.points)
+                pts.emplace_back(pt + to_bed);
+            if (path.closed && !pts.empty())
+                pts.emplace_back(pts.front());
+            if (pts.size() >= 2)
+                strokes.emplace_back(std::move(pts));
+        }
+    }
+    plates.set_plot_paths(strokes, !strokes.empty());
+
+    plater->set_current_canvas_as_dirty();
+}
+
+void PlotterPanel::set_status(const std::string &msg)
+{
+    if (m_status_label) {
+        m_status_label->SetLabelText(from_u8(msg));
+        m_status_label->Wrap(GetClientSize().GetWidth() - FromDIP(16));
+    }
     Layout();
 }
 
-void PlotterModeDialog::refresh_ui()
+void PlotterPanel::refresh_ui()
 {
     const bool calibrated = m_profile.is_valid();
     if (m_profile_label) {
         if (calibrated) {
             char buf[160];
             std::snprintf(buf, sizeof(buf),
-                          "Calibrated: X %.1f–%.1f, Y %.1f–%.1f mm, pen Z %.2f/%.2f/%.2f",
+                          "Calibrated: X %.1f–%.1f, Y %.1f–%.1f mm\npen Z %.2f/%.2f/%.2f",
                           m_profile.min_x, m_profile.max_x, m_profile.min_y, m_profile.max_y,
                           m_profile.pen_up_z, m_profile.pen_contact_z, m_profile.pen_down_z);
             m_profile_label->SetLabelText(buf);
@@ -164,31 +222,26 @@ void PlotterModeDialog::refresh_ui()
     }
     const bool ready = calibrated && m_has_project;
     if (m_btn_preview) m_btn_preview->Enable(ready);
-    if (m_btn_send)    m_btn_send->Enable(ready && m_machine != nullptr);
+    if (m_btn_send)    m_btn_send->Enable(ready);
     if (m_btn_save)    m_btn_save->Enable(m_has_project);
     if (m_btn_fit)     m_btn_fit->Enable(ready);
     Layout();
 }
 
-bool PlotterModeDialog::ensure_profile()
+void PlotterPanel::on_calibrate(wxCommandEvent &)
 {
-    if (m_profile.is_valid())
-        return true;
-    set_status("Calibration required before plotting.");
-    return false;
-}
-
-void PlotterModeDialog::on_calibrate(wxCommandEvent &)
-{
-    PlotterCalibrationDialog dlg(this, m_machine);
+    PlotterCalibrationDialog dlg(wxGetApp().mainframe, selected_machine());
     if (dlg.ShowModal() == wxID_OK)
         m_profile = dlg.controller().profile();
-    else
+    else {
+        m_profile = Plotter::PlotterToolProfile();
         m_profile.load(PlotterCalibrationController::profile_path());
+    }
     refresh_ui();
+    update_plate_overlay();
 }
 
-void PlotterModeDialog::on_import_svg(wxCommandEvent &)
+void PlotterPanel::on_import_svg(wxCommandEvent &)
 {
     wxFileDialog fd(this, _L("Import SVG"), "", "", "SVG files (*.svg)|*.svg",
                     wxFD_OPEN | wxFD_FILE_MUST_EXIST);
@@ -203,11 +256,12 @@ void PlotterModeDialog::on_import_svg(wxCommandEvent &)
     m_project     = std::move(proj);
     m_has_project = true;
     set_status("");
-    on_fit_to_area(*(new wxCommandEvent()));  // sensible default placement
+    fit_to_area(); // sensible default placement
     refresh_ui();
+    update_plate_overlay();
 }
 
-void PlotterModeDialog::on_fit_to_area(wxCommandEvent &)
+void PlotterPanel::fit_to_area()
 {
     if (!m_has_project || !m_profile.is_valid())
         return;
@@ -227,17 +281,24 @@ void PlotterModeDialog::on_fit_to_area(wxCommandEvent &)
     if (m_scale_spin)    m_scale_spin->SetValue(m_project.scale);
     if (m_offset_x_spin) m_offset_x_spin->SetValue(m_project.offset.x());
     if (m_offset_y_spin) m_offset_y_spin->SetValue(m_project.offset.y());
-    refresh_ui();
 }
 
-void PlotterModeDialog::on_placement_changed()
+void PlotterPanel::on_fit_to_area(wxCommandEvent &)
+{
+    fit_to_area();
+    refresh_ui();
+    update_plate_overlay();
+}
+
+void PlotterPanel::on_placement_changed()
 {
     if (m_scale_spin)    m_project.scale    = m_scale_spin->GetValue();
     if (m_offset_x_spin) m_project.offset.x() = m_offset_x_spin->GetValue();
     if (m_offset_y_spin) m_project.offset.y() = m_offset_y_spin->GetValue();
+    update_plate_overlay();
 }
 
-PlotPaths PlotterModeDialog::build_placed_paths(std::string *error) const
+PlotPaths PlotterPanel::build_placed_paths(std::string *error) const
 {
     PlotPaths placed = m_project.placed_paths(error);
     if (placed.empty())
@@ -245,7 +306,7 @@ PlotPaths PlotterModeDialog::build_placed_paths(std::string *error) const
     return PathOptimizer::optimize(std::move(placed), Vec2d(0., 0.));
 }
 
-void PlotterModeDialog::on_save_project(wxCommandEvent &)
+void PlotterPanel::on_save_project(wxCommandEvent &)
 {
     if (!m_has_project)
         return;
@@ -262,7 +323,7 @@ void PlotterModeDialog::on_save_project(wxCommandEvent &)
         set_status("");
 }
 
-void PlotterModeDialog::on_open_project(wxCommandEvent &)
+void PlotterPanel::on_open_project(wxCommandEvent &)
 {
     wxFileDialog fd(this, _L("Open plotter project"), projects_dir(), "",
                     "BambuPlotter project (*.bplot)|*.bplot", wxFD_OPEN | wxFD_FILE_MUST_EXIST);
@@ -281,12 +342,15 @@ void PlotterModeDialog::on_open_project(wxCommandEvent &)
     if (m_offset_y_spin) m_offset_y_spin->SetValue(m_project.offset.y());
     set_status("");
     refresh_ui();
+    update_plate_overlay();
 }
 
-void PlotterModeDialog::on_generate_preview(wxCommandEvent &)
+void PlotterPanel::on_generate_preview(wxCommandEvent &)
 {
-    if (!ensure_profile())
+    if (!m_profile.is_valid()) {
+        set_status("Calibration required before plotting.");
         return;
+    }
     std::string err;
     const PlotPaths paths = build_placed_paths(&err);
     if (paths.empty()) {
@@ -315,12 +379,15 @@ void PlotterModeDialog::on_generate_preview(wxCommandEvent &)
         plater->load_gcode(from_u8(preview_path));
 }
 
-void PlotterModeDialog::on_send(wxCommandEvent &)
+void PlotterPanel::on_send(wxCommandEvent &)
 {
-    if (!ensure_profile())
+    if (!m_profile.is_valid()) {
+        set_status("Calibration required before plotting.");
         return;
-    if (m_machine == nullptr) {
-        set_status("no printer connected");
+    }
+    MachineObject *machine = selected_machine();
+    if (machine == nullptr) {
+        set_status("no printer connected — select one in the Device tab");
         return;
     }
     std::string err;
@@ -338,7 +405,7 @@ void PlotterModeDialog::on_send(wxCommandEvent &)
     }
     set_status("");
     const PlotterPrintResult r = PlotterPrintJob::upload_and_start(
-        m_machine, job, [this](const std::string &stage, int pct) {
+        machine, job, [this](const std::string &stage, int pct) {
             m_stats_label->SetLabelText(from_u8(stage) + wxString::Format(" (%d%%)", pct));
             wxYield();
         });
@@ -347,7 +414,5 @@ void PlotterModeDialog::on_send(wxCommandEvent &)
     else
         set_status("Job sent — the printer will run it. You can disconnect now.");
 }
-
-void PlotterModeDialog::on_dpi_changed(const wxRect &) { Refresh(); }
 
 } } // namespace Slic3r::GUI

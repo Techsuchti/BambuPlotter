@@ -159,6 +159,8 @@
 #include "Widgets/ComboBox.hpp"
 #include "Widgets/StaticGroup.hpp"
 #include "Widgets/MultiNozzleSync.hpp"
+#include "Widgets/SwitchButton.hpp"
+#include "Plotter/PlotterPanel.hpp"
 
 #include "GUI_ObjectTable.hpp"
 #include "libslic3r/Thread.hpp"
@@ -671,6 +673,13 @@ struct Sidebar::priv
     ExtruderGroup *left_extruder = nullptr;
     ExtruderGroup *right_extruder = nullptr;
     ExtruderGroup *single_extruder = nullptr;
+
+    // BambuPlotter: mode switch + plotter panel swapped in for the normal
+    // sidebar sections; saved_3d_visibility restores them on switch-back.
+    SwitchBoard  *mode_switch   = nullptr;
+    PlotterPanel *plotter_panel = nullptr;
+    bool          plotter_mode  = false;
+    std::vector<std::pair<wxWindow *, bool>> saved_3d_visibility;
 
     int  FromDIP(int n) { return plater->FromDIP(n); }
     void layout_printer(bool isBBL, bool isDual);
@@ -2443,6 +2452,17 @@ Sidebar::Sidebar(Plater *parent)
     p->scrolled->SetDoubleBuffered(true);
 #endif //__WINDOWS__
 
+    // BambuPlotter: mode switch at the very top of the sidebar.
+    {
+        p->mode_switch = new SwitchBoard(p->scrolled, _L("3D Print"), _L("Plotter"),
+                                         wxSize(FromDIP(220), FromDIP(28)));
+        p->mode_switch->updateState("left");
+        p->mode_switch->Bind(wxCUSTOMEVT_SWITCH_POS, [this](wxCommandEvent &evt) {
+            set_plotter_mode(evt.GetInt() == 0); // right = Plotter
+        });
+        scrolled_sizer->Add(p->mode_switch, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP | wxBOTTOM, FromDIP(6));
+    }
+
     // add printer
     {
         /***************** 1. create printer title bar    **************/
@@ -3161,6 +3181,11 @@ Sidebar::Sidebar(Plater *parent)
     p->object_layers = new ObjectLayers(p->scrolled);
     p->object_layers->Hide();
     p->sizer_params->Add(p->object_layers->get_sizer(), 0, wxEXPAND | wxTOP, 0);
+
+    // BambuPlotter: plotter-mode panel, swapped in for the sections above.
+    p->plotter_panel = new PlotterPanel(p->scrolled);
+    p->plotter_panel->Show(false);
+    scrolled_sizer->Add(p->plotter_panel, 1, wxEXPAND);
 
     auto *sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(p->scrolled, 1, wxEXPAND);
@@ -4749,6 +4774,56 @@ wxPanel* Sidebar::print_panel()
 wxPanel* Sidebar::filament_panel()
 {
     return p->m_panel_filament_content;
+}
+
+// BambuPlotter ---------------------------------------------------------------
+
+static void plotter_collect_sizer_windows(wxSizer *sizer, std::vector<wxWindow *> &out)
+{
+    for (size_t i = 0; i < sizer->GetItemCount(); ++i) {
+        wxSizerItem *item = sizer->GetItem(i);
+        if (item->IsWindow())
+            out.push_back(item->GetWindow());
+        else if (item->IsSizer())
+            plotter_collect_sizer_windows(item->GetSizer(), out);
+    }
+}
+
+void Sidebar::set_plotter_mode(bool on)
+{
+    if (p->plotter_mode == on || p->plotter_panel == nullptr)
+        return;
+    p->plotter_mode = on;
+
+    if (on) {
+        // Hide every normal sidebar section, remembering its visibility so
+        // switching back restores the exact previous state.
+        p->saved_3d_visibility.clear();
+        std::vector<wxWindow *> windows;
+        plotter_collect_sizer_windows(m_scrolled_sizer, windows);
+        for (wxWindow *w : windows) {
+            if (w == p->mode_switch || w == p->plotter_panel)
+                continue;
+            p->saved_3d_visibility.emplace_back(w, w->IsShown());
+            w->Show(false);
+        }
+        p->plotter_panel->Show(true);
+    } else {
+        p->plotter_panel->Show(false);
+        for (auto &saved : p->saved_3d_visibility)
+            saved.first->Show(saved.second);
+        p->saved_3d_visibility.clear();
+    }
+    p->plotter_panel->set_active(on);
+    if (p->mode_switch)
+        p->mode_switch->updateState(on ? "right" : "left");
+    m_scrolled_sizer->Layout();
+    p->scrolled->Refresh();
+}
+
+bool Sidebar::is_plotter_mode() const
+{
+    return p->plotter_mode;
 }
 
 ConfigOptionsGroup* Sidebar::og_freq_chng_params(const bool is_fff)

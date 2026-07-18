@@ -1,6 +1,4 @@
 #include "MainFrame.hpp"
-#include "slic3r/GUI/Plotter/PlotterModeDialog.hpp"
-#include "slic3r/GUI/Plotter/PlotterCalibrationDialog.hpp"
 #include "GLToolbar.hpp"
 #include <wx/panel.h>
 #include <wx/notebook.h>
@@ -3596,25 +3594,6 @@ void MainFrame::init_menubar_as_editor()
     if (viewMenu)
         m_menubar->Append(viewMenu, wxString::Format("&%s", _L("View")));
 
-    // BambuPlotter: pen-plotter mode (bypasses the 3D slicing pipeline).
-    wxMenu *plotterMenu = new wxMenu();
-    append_menu_item(plotterMenu, wxID_ANY, _L("Plotter Mode…"), _L("Import an SVG and plot it as pen strokes"),
-        [this](wxCommandEvent &) {
-            MachineObject *obj = nullptr;
-            if (Slic3r::DeviceManager *dev = wxGetApp().getDeviceManager())
-                obj = dev->get_selected_machine();
-            PlotterModeDialog dlg(this, obj);
-            dlg.ShowModal();
-        }, "", nullptr);
-    append_menu_item(plotterMenu, wxID_ANY, _L("Plotter Calibration…"), _L("Calibrate the pen plotter"),
-        [this](wxCommandEvent &) {
-            MachineObject *obj = nullptr;
-            if (Slic3r::DeviceManager *dev = wxGetApp().getDeviceManager())
-                obj = dev->get_selected_machine();
-            PlotterCalibrationDialog dlg(this, obj);
-            dlg.ShowModal();
-        }, "", nullptr);
-    m_menubar->Append(plotterMenu, wxString::Format("&%s", _L("Plotter")));
     //if (publishMenu)
     //    m_menubar->Append(publishMenu, wxString::Format("&%s", _L("3D Models")));
 

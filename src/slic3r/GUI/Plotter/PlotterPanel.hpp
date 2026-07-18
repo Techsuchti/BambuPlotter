@@ -1,9 +1,10 @@
-#ifndef slic3r_PlotterModeDialog_hpp_
-#define slic3r_PlotterModeDialog_hpp_
+#ifndef slic3r_PlotterPanel_hpp_
+#define slic3r_PlotterPanel_hpp_
 
 #include <string>
 
-#include "slic3r/GUI/GUI_Utils.hpp"
+#include <wx/panel.h>
+
 #include "libslic3r/Plotter/PlotterProject.hpp"
 #include "libslic3r/Plotter/PlotterToolProfile.hpp"
 
@@ -17,25 +18,30 @@ class MachineObject;
 
 namespace GUI {
 
-// Top-level Plotter Mode entry point. Bypasses the 3D slicing pipeline
-// entirely: import an SVG, place it inside the calibrated plotting rectangle,
-// preview the movement-only G-code, and send the validated job to the printer
-// (Mac can disconnect after start). Calibration is handled by
-// PlotterCalibrationDialog, launched from here when no valid profile exists.
-class PlotterModeDialog : public DPIDialog
+// Plotter Mode sidebar panel. Lives inside the Prepare tab's Sidebar and is
+// swapped in for the Printer/Filament/Process sections when the user flips
+// the "3D Print / Plotter" switch at the top of the sidebar. Reuses the
+// existing 3D plate view: the calibrated plotting rectangle and the placed
+// SVG strokes are drawn directly on the current plate as overlays.
+class PlotterPanel : public wxPanel
 {
 public:
-    explicit PlotterModeDialog(wxWindow *parent, MachineObject *machine = nullptr);
+    explicit PlotterPanel(wxWindow *parent);
 
-protected:
-    void on_dpi_changed(const wxRect &suggested_rect) override;
+    // Called by the Sidebar when the mode switch flips. Activating reloads
+    // the calibration profile from disk and shows the plate overlays;
+    // deactivating hides them again.
+    void set_active(bool active);
 
 private:
     void build_ui();
     void refresh_ui();
     void set_status(const std::string &msg);
+    void update_plate_overlay();
+    void fit_to_area();
 
-    bool ensure_profile();               // load or run the calibration wizard
+    MachineObject *selected_machine() const;
+
     void on_calibrate(wxCommandEvent &);
     void on_import_svg(wxCommandEvent &);
     void on_fit_to_area(wxCommandEvent &);
@@ -48,7 +54,7 @@ private:
     // Returns placed, optimized paths (paper space) or empty on failure.
     Plotter::PlotPaths build_placed_paths(std::string *error) const;
 
-    MachineObject             *m_machine = nullptr;
+    bool                        m_active = false;
     Plotter::PlotterToolProfile m_profile;
     Plotter::PlotterProject     m_project;
     bool                        m_has_project = false;
@@ -72,4 +78,4 @@ private:
 } // namespace GUI
 } // namespace Slic3r
 
-#endif // slic3r_PlotterModeDialog_hpp_
+#endif // slic3r_PlotterPanel_hpp_
