@@ -600,7 +600,7 @@ ReselectMachineDialog::ReselectMachineDialog(wxWindow* parent)
     suggestText = new Label(textPanel, wxEmptyString);
 
     linkwiki = new Label(textPanel, _L("How to save time?→"));
-    linkwiki->SetForegroundColour(wxColour("#00AE42"));
+    linkwiki->SetForegroundColour(wxColour("#6E8CA0"));
     linkwiki->SetBackgroundColour(wxColour("#FFFFFF"));
     linkwiki->SetFont(Label::Body_14);
     linkwiki->Bind(wxEVT_ENTER_WINDOW, [this](auto& e) { SetCursor(wxCURSOR_HAND); });
@@ -673,7 +673,7 @@ ReselectMachineDialog::ReselectMachineDialog(wxWindow* parent)
     m_buttonClose = new Button(this, _L("Close"));
     m_buttonClose->SetMinSize(wxSize(FromDIP(80), FromDIP(32)));
     m_buttonClose->SetMaxSize(wxSize(FromDIP(80), FromDIP(32)));
-    m_buttonClose->SetBackgroundColor(wxColour("#00AE42"));
+    m_buttonClose->SetBackgroundColor(wxColour("#6E8CA0"));
     m_buttonClose->Bind(wxEVT_BUTTON, [this](wxCommandEvent &e){
         this->Close();
     });

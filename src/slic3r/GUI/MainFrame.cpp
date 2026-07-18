@@ -307,7 +307,7 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
     default:
     case GUI_App::EAppMode::Editor:
         m_taskbar_icon = std::make_unique<BambuStudioTaskBarIcon>(wxTBI_DOCK);
-        m_taskbar_icon->SetIcon(wxIcon(Slic3r::var("BambuStudio-mac_256px.ico"), wxBITMAP_TYPE_ICO), "BambuStudio");
+        m_taskbar_icon->SetIcon(wxIcon(Slic3r::var("BambuStudio-mac_256px.ico"), wxBITMAP_TYPE_ICO), "BambuPlotter");
         break;
     case GUI_App::EAppMode::GCodeViewer:
         break;
@@ -1172,7 +1172,7 @@ void MainFrame::update_title()
         m_topbar->SetTitle(title);
     // Also reflect the "*" in the window/taskbar title, which set_project_name builds
     // as "<name> - BambuStudio".
-    SetTitle(title + " - BambuStudio");
+    SetTitle(title + " - BambuPlotter");
 #else
     SetTitle(title);
 #ifdef __APPLE__
@@ -2522,7 +2522,7 @@ void MainFrame::update_side_button_style()
     StateColor m_btn_bg_enable = StateColor(
         std::pair<wxColour, int>(wxColour(27, 136, 68), StateColor::Pressed),
         std::pair<wxColour, int>(wxColour(48, 221, 112), StateColor::Hovered),
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal)
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal)
     );
 
     m_slice_btn->SetTextLayout(SideButton::EHorizontalOrientation::HO_Left, FromDIP(15));

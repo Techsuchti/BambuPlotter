@@ -86,7 +86,7 @@ static const wxColour STATIC_BOX_LINE_COL = wxColour(238, 238, 238);
 static const wxColour BUTTON_NORMAL1_COL = wxColour(238, 238, 238);
 static const wxColour BUTTON_NORMAL2_COL = wxColour(206, 206, 206);
 static const wxColour BUTTON_PRESS_COL   = wxColour(172, 172, 172);
-static const wxColour BUTTON_HOVER_COL   = wxColour(0, 174, 66);
+static const wxColour BUTTON_HOVER_COL   = wxColour(110, 140, 160);
 
 static const wxColour DISCONNECT_TEXT_COL = wxColour(171, 172, 172);
 static const wxColour NORMAL_TEXT_COL     = wxColour(48, 58, 60);
@@ -1104,12 +1104,12 @@ void PrintingTaskPanel::create_panel(wxWindow *parent)
     m_staticText_progress_percent = new wxStaticText(penel_text, wxID_ANY, "0", wxDefaultPosition, wxDefaultSize, 0);
     m_staticText_progress_percent->SetFont(::Label::Head_18);
     m_staticText_progress_percent->SetMaxSize(wxSize(-1, FromDIP(20)));
-    m_staticText_progress_percent->SetForegroundColour(wxColour(0, 174, 66));
+    m_staticText_progress_percent->SetForegroundColour(wxColour(110, 140, 160));
 
     m_staticText_progress_percent_icon = new wxStaticText(penel_text, wxID_ANY, "%", wxDefaultPosition, wxDefaultSize, 0);
     m_staticText_progress_percent_icon->SetFont(::Label::Body_11);
     m_staticText_progress_percent_icon->SetMaxSize(wxSize(-1, FromDIP(13)));
-    m_staticText_progress_percent_icon->SetForegroundColour(wxColour(0, 174, 66));
+    m_staticText_progress_percent_icon->SetForegroundColour(wxColour(110, 140, 160));
 
     sizer_percent->Add(m_staticText_progress_percent, 0, 0, 0);
 
@@ -2394,7 +2394,7 @@ wxBoxSizer *StatusBasePanel::create_misc_control(wxWindow *parent)
     m_switch_fan->UseTextFan();
     m_switch_fan->SetTextColor(StateColor(std::make_pair(DISCONNECT_TEXT_COL, (int) StateColor::Disabled), std::make_pair(NORMAL_FAN_TEXT_COL, (int) StateColor::Normal)));
 
-    m_switch_fan->Bind(wxEVT_ENTER_WINDOW, [this](auto &e) { m_fan_panel->SetBackgroundColor(wxColour(0, 174, 66)); });
+    m_switch_fan->Bind(wxEVT_ENTER_WINDOW, [this](auto &e) { m_fan_panel->SetBackgroundColor(wxColour(110, 140, 160)); });
 
     m_switch_fan->Bind(wxEVT_LEAVE_WINDOW, [this, parent](auto &e) { m_fan_panel->SetBackgroundColor(parent->GetBackgroundColour()); });
 
@@ -6687,8 +6687,8 @@ void RectTextPanel::OnPaint(wxPaintEvent &event)
     const auto &size = GetSize();
 
     wxPaintDC dc(this);
-    dc.SetBrush(wxBrush(wxColour("#00AE42")));
-    dc.SetPen(wxPen(wxColour("#00AE42")));
+    dc.SetBrush(wxBrush(wxColour("#6E8CA0")));
+    dc.SetPen(wxPen(wxColour("#6E8CA0")));
     dc.DrawRoundedRectangle(size, FromDIP(4));
     dc.SetTextForeground(wxColour(255, 255, 255));
     dc.DrawText(text, wxPoint(FromDIP(2), FromDIP(2)));

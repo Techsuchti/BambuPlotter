@@ -260,7 +260,7 @@ void GreenSlider::OnPaint(wxPaintEvent&)
     int ts = FromDIP(8);
     int pen_w = FromDIP(2);
 
-    wxColour greenClr = IsEnabled() ? wxColour(0, 174, 66)
+    wxColour greenClr = IsEnabled() ? wxColour(110, 140, 160)
                                     : dark_or(wxColour(180, 180, 180), wxColour(90, 90, 96));
     wxColour grayClr  = IsEnabled() ? dark_or(wxColour(200, 200, 200), wxColour(90, 90, 96))
                                     : dark_or(wxColour(220, 220, 220), wxColour(70, 70, 76));
@@ -915,7 +915,7 @@ private:
         wxColour row_bg   = dark_or(*wxWHITE, wxColour(0x2D, 0x2D, 0x31));
         wxColour hover_bg = dark_or(wxColour(245, 245, 245), wxColour(0x3C, 0x3C, 0x42));
         wxColour text_fg  = texture_import_text_colour();
-        wxColour green    = wxColour(0, 174, 66);
+        wxColour green    = wxColour(110, 140, 160);
 
         wxPanel* row = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxSize(-1, row_h),
                                    wxTAB_TRAVERSAL | wxFULL_REPAINT_ON_RESIZE);
@@ -2026,12 +2026,12 @@ void TextureImportDialog::build_params_panel(wxWindow* parent, wxSizer* sizer)
         StateColor preset_bg(
             std::pair<wxColour, int>(wxColour(27, 136, 68), StateColor::Pressed | StateColor::Checked),
             std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered | StateColor::Checked),
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Checked),
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Checked),
             std::pair<wxColour, int>(dark_or(wxColour(206, 206, 206), wxColour(0x54, 0x54, 0x5B)), StateColor::Pressed),
             std::pair<wxColour, int>(dark_or(wxColour(238, 238, 238), wxColour(0x4C, 0x4C, 0x55)), StateColor::Hovered),
             std::pair<wxColour, int>(dark_or(wxColour(255, 255, 255), wxColour(0x2D, 0x2D, 0x31)), StateColor::Normal));
         StateColor preset_bd(
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Checked),
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Checked),
             std::pair<wxColour, int>(dark_or(wxColour(206, 206, 206), wxColour(0x54, 0x54, 0x5B)), StateColor::Normal));
         StateColor preset_text(
             std::pair<wxColour, int>(wxColour(255, 255, 255), StateColor::Checked),
@@ -2097,9 +2097,9 @@ void TextureImportDialog::build_params_panel(wxWindow* parent, wxSizer* sizer)
             std::pair<wxColour, int>(dark_or(wxColour(238, 238, 238), wxColour(0x4C, 0x4C, 0x55)), StateColor::Hovered),
             std::pair<wxColour, int>(dark_or(wxColour(255, 255, 255), wxColour(0x2D, 0x2D, 0x31)), StateColor::Normal));
         StateColor btn_bd_green(
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
         StateColor btn_text_green(
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
 
         m_btn_color_auto->SetCornerRadius(FromDIP(12));
         m_btn_color_auto->SetMinSize(wxSize(FromDIP(60), FromDIP(28)));
@@ -2278,9 +2278,9 @@ void TextureImportDialog::build_bottom_buttons(wxSizer* sizer)
         StateColor ok_bg(
             std::pair<wxColour, int>(wxColour(27, 136, 68), StateColor::Pressed),
             std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
         StateColor ok_bd(
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
         StateColor ok_text(
             std::pair<wxColour, int>(wxColour("#FFFFFE"), StateColor::Normal));
         m_btn_ok->SetBackgroundColor(ok_bg);
@@ -2350,9 +2350,9 @@ void TextureImportDialog::update_ui_for_state()
         StateColor ok_bg(
             std::pair<wxColour, int>(wxColour(27, 136, 68), StateColor::Pressed),
             std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
         StateColor ok_bd(
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
         StateColor ok_text(
             std::pair<wxColour, int>(wxColour("#FFFFFE"), StateColor::Normal));
         m_btn_ok->SetBackgroundColor(ok_bg);
@@ -2624,9 +2624,9 @@ void TextureImportDialog::on_mesh_repair_decision_required(wxCommandEvent&)
     StateColor primary_bg(
         std::pair<wxColour, int>(wxColour(27, 136, 68), StateColor::Pressed),
         std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
     StateColor primary_bd(
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
     StateColor primary_text(
         std::pair<wxColour, int>(wxColour("#FFFFFE"), StateColor::Normal));
     StateColor secondary_bg(
@@ -4080,9 +4080,9 @@ void TextureImportDialog::highlight_view_button(int view_index)
     StateColor active_bg(
         std::pair<wxColour, int>(wxColour(27, 136, 68), StateColor::Pressed),
         std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
     StateColor active_bd(
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
     StateColor active_text(
         std::pair<wxColour, int>(wxColour(255, 255, 255), StateColor::Normal));
 
@@ -4191,9 +4191,9 @@ void TextureImportDialog::update_confirm_button_state()
         StateColor ok_bg(
             std::pair<wxColour, int>(wxColour(27, 136, 68), StateColor::Pressed),
             std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
         StateColor ok_bd(
-            std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+            std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
         StateColor ok_text(
             std::pair<wxColour, int>(wxColour(255, 255, 255), StateColor::Normal));
         m_btn_ok->SetBackgroundColor(ok_bg);

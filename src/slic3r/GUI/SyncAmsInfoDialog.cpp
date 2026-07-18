@@ -1994,7 +1994,7 @@ void SyncAmsInfoDialog::Enable_Auto_Refill(bool enable)
 {
     if (!m_ams_backup_tip) { return; }
     if (enable) {
-        m_ams_backup_tip->SetForegroundColour(wxColour("#00AE42"));
+        m_ams_backup_tip->SetForegroundColour(wxColour("#6E8CA0"));
     } else {
         m_ams_backup_tip->SetForegroundColour(wxColour(0x90, 0x90, 0x90));
     }

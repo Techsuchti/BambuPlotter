@@ -546,7 +546,7 @@ void WikiPanel::bind_events()
 
 void WikiPanel::set_hover_state(bool hover)
 {
-    wxColour color = hover ? wxColour("#00AE42") : wxColour("#6B6B6B");
+    wxColour color = hover ? wxColour("#6E8CA0") : wxColour("#6B6B6B");
     m_wiki_bmp->SetBitmap(hover ? m_wiki_icon_hover->bmp() : m_wiki_icon->bmp());
     m_wiki_label->SetForegroundColour(color);
     m_wiki_label->SetFont(hover ? Label::Body_13.Underlined() : Label::Body_13);

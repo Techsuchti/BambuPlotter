@@ -1501,7 +1501,7 @@ InputIpAddressDialog::InputIpAddressDialog(wxWindow *parent)
     comfirm_last_enter_text   = _L("3. Please obtain the device SN from the printer side; it is usually found in the device information on the printer screen.");
 
     Label *wiki = new Label(this, ::Label::Body_13, _L("View wiki"), LB_AUTO_WRAP);
-    wiki->SetForegroundColour(wxColour(0, 174, 66));
+    wiki->SetForegroundColour(wxColour(110, 140, 160));
     wiki->Bind(wxEVT_ENTER_WINDOW, [this](auto &e) {SetCursor(wxCURSOR_HAND);});
     wiki->Bind(wxEVT_LEAVE_WINDOW, [this](auto &e) {SetCursor(wxCURSOR_ARROW);});
     wiki->Bind(wxEVT_LEFT_DOWN, [this](auto &e) {
@@ -2399,12 +2399,12 @@ ExpandCenterDialog::ExpandCenterDialog(wxWindow* parent /*= nullptr*/) :
     // Enable Helio Additive button (green)
     StateColor btn_bg_green = StateColor(
         std::pair<wxColour, int>(wxColour(0, 150, 50), StateColor::Hovered), 
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
 
     wxBoxSizer* button_sizer = new wxBoxSizer(wxHORIZONTAL);
     Button* m_button_activate = new Button(this, _L("Enable Helio Additive"));
     m_button_activate->SetBackgroundColor(btn_bg_green);
-    m_button_activate->SetBorderColor(wxColour(0, 174, 66));
+    m_button_activate->SetBorderColor(wxColour(110, 140, 160));
     // White text for all states
     StateColor activate_btn_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Disabled),
                                   std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Hovered),

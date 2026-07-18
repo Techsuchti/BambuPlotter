@@ -45,7 +45,7 @@ public:
 
         auto *wiki_link = new LinkLabel(this, _L("Learn more"), "https://e.bambulab.com/t?c=rYwNe4U869Qa9kW1");
         wiki_link->getLabel()->SetFont(Label::Body_12);
-        wiki_link->SeLinkLabelFColour(wxColour("#00AE42"));
+        wiki_link->SeLinkLabelFColour(wxColour("#6E8CA0"));
         wiki_link->SeLinkLabelBColour(*wxWHITE);
 
         auto *smart_sizer = new wxBoxSizer(wxHORIZONTAL);
@@ -248,10 +248,10 @@ StateColor btn_bg_green(
     std::pair<wxColour, int>(wxColour(144, 144, 144), StateColor::Disabled),
     std::pair<wxColour, int>(wxColour(27, 136, 68), StateColor::Pressed),
     std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-    std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal)
+    std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal)
 );
 
-static const StateColor btn_bd_green(std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+static const StateColor btn_bd_green(std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
 
 static const StateColor btn_text_green(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Normal));
 

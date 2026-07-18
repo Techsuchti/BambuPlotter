@@ -293,7 +293,7 @@ void wgtDeviceNozzleRackHotendUpdate::CreateGui()
 
     m_status_label = new Label(this);
     m_status_label->SetFont(Label::Body_12);
-    // m_status_label->SetForegroundColour(wxColour("#00AE42"));
+    // m_status_label->SetForegroundColour(wxColour("#6E8CA0"));
 
     content_sizer->Add(info_panel, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(20));
     content_sizer->Add(m_used_time, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(20));
@@ -617,7 +617,7 @@ void wgtDeviceNozzleRackHotendUpdate::UpdateInfo(const DevNozzle& nozzle)
         m_used_time->Show(true);
         m_status_label->Show(true);
         m_status_bitmap->Show(true);
-        m_status_label->SetForegroundColour(wxColour("#00AE42"));
+        m_status_label->SetForegroundColour(wxColour("#6E8CA0"));
         m_status_label->SetLabel(_L("Refresh"));
         m_status_bitmap->SetBitmap(m_refresh_icon->bmp());
         m_status_bitmap->Refresh();

@@ -176,7 +176,7 @@ PartSkipDialog::PartSkipDialog(wxWindow *parent) : DPIDialog(parent, wxID_ANY, _
     m_cnt_label = new Label(m_book_third_panel, wxEmptyString);
     m_cnt_label->Wrap(-1);
     m_cnt_label->SetBackgroundColour(*wxWHITE);
-    m_cnt_label->SetForegroundColour(wxColour(0, 174, 66));
+    m_cnt_label->SetForegroundColour(wxColour(110, 140, 160));
     m_cnt_label->SetFont(Label::Head_16);
     m_cnt_label->SetSize(wxSize(-1, FromDIP(20)));
     m_cnt_label->SetMaxSize(wxSize(-1, FromDIP(20)));
@@ -626,7 +626,7 @@ void PartSkipDialog::OnSwitchDrag(wxCommandEvent &event)
         m_switch_drag_btn->SetIcon("canvas_drag");
     } else {
         m_is_drag = true;
-        m_switch_drag_btn->SetBackgroundColor(wxColour(0, 174, 66));
+        m_switch_drag_btn->SetBackgroundColor(wxColour(110, 140, 160));
         m_switch_drag_btn->SetIcon("canvas_drag_active");
     }
     m_canvas->SwitchDrag(m_is_drag);

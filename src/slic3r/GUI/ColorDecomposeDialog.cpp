@@ -26,7 +26,7 @@
 namespace Slic3r {
 namespace GUI {
 
-static const wxColour COLOR_BRAND("#00AE42");
+static const wxColour COLOR_BRAND("#6E8CA0");
 static const wxColour COLOR_BORDER_NORMAL("#EEEEEE");
 static const wxColour COLOR_BG_CARD("#F8F8F8");
 static const wxColour COLOR_LABEL_GREY("#ACACAC");
@@ -540,10 +540,10 @@ wxBoxSizer* ColorDecomposeDialog::create_button_panel()
     m_btn_ok = new Button(this, _L("OK"));
     m_btn_ok->SetBackgroundColor(StateColor(
         std::make_pair(wxColour("#C2C2C2"), (int) StateColor::Disabled),
-        std::make_pair(wxColour("#00AE42"), (int) StateColor::Normal)));
+        std::make_pair(wxColour("#6E8CA0"), (int) StateColor::Normal)));
     m_btn_ok->SetBorderColor(StateColor(
         std::make_pair(wxColour("#C2C2C2"), (int) StateColor::Disabled),
-        std::make_pair(wxColour("#00AE42"), (int) StateColor::Normal)));
+        std::make_pair(wxColour("#6E8CA0"), (int) StateColor::Normal)));
     m_btn_ok->SetTextColor(StateColor(
         std::make_pair(*wxWHITE, (int) StateColor::Disabled),
         std::make_pair(*wxWHITE, (int) StateColor::Normal)));

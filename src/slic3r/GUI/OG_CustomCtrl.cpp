@@ -922,7 +922,7 @@ void OG_CustomCtrl::CtrlLine::render(wxDC& dc, wxCoord h_pos, wxCoord v_pos)
         wxCoord label_actual_v_pos = v_pos;
         if (ctrl->opt_group->label_width != 0 && !og_line.label.IsEmpty()) {
             wxString label = og_line.label;
-            wxColour blink_color = StateColor::darkModeColorFor("#00AE42");
+            wxColour blink_color = StateColor::darkModeColorFor("#6E8CA0");
 
             dc.SetFont(ctrl->m_font);
             wxString multiline_text;
@@ -1013,7 +1013,7 @@ void OG_CustomCtrl::CtrlLine::render(wxDC& dc, wxCoord h_pos, wxCoord v_pos)
     const std::vector<Option>& option_set = og_line.get_options();
 
     wxString label = og_line.label;
-    wxColour blink_color = StateColor::darkModeColorFor("#00AE42");
+    wxColour blink_color = StateColor::darkModeColorFor("#6E8CA0");
     bool is_url_string = false;
     if (ctrl->opt_group->label_width != 0 && !label.IsEmpty()) {
         const wxColour* text_clr = field ? field->label_color() : og_line.full_Label_color;
@@ -1170,7 +1170,7 @@ wxCoord OG_CustomCtrl::CtrlLine::draw_text(wxDC &dc, wxPoint pos, const wxString
 
         wxColour old_clr = dc.GetTextForeground();
         wxFont old_font = dc.GetFont();
-        wxColor clr_url = StateColor::darkModeColorFor("#00AE42");
+        wxColor clr_url = StateColor::darkModeColorFor("#6E8CA0");
         if (is_focused && is_url) {
         // temporary workaround for the OSX because of strange Bold font behavior on BigSerf
 #ifdef __APPLE__

@@ -92,11 +92,11 @@ namespace {
      // Button colors for cancel button
      StateColor btn_bg_green = StateColor(
          std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-         std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+         std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
 
      m_button_cancel = new Button(this, _L("Got it"));
      m_button_cancel->SetBackgroundColor(btn_bg_green);
-     m_button_cancel->SetBorderColor(wxColour(0, 174, 66));
+     m_button_cancel->SetBorderColor(wxColour(110, 140, 160));
      // White text for all states
      StateColor white_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Disabled),
                            std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Hovered),
@@ -392,7 +392,7 @@ void HelioStatementDialog::create_legal_page()
     // Note: URLs are hardcoded and validated (not user input), so they are safe from XSS.
     // Translated strings from _L() are trusted content (legal terms are carefully controlled).
     // wxHtmlWindow provides basic HTML sanitization for rendered content.
-    const wxString STYLE_LINK = "color:#00AE42; text-decoration:underline;";
+    const wxString STYLE_LINK = "color:#6E8CA0; text-decoration:underline;";
     const wxString STYLE_END = "\">";
 
     const wxString TAG_A_START = "<a href=\"";
@@ -548,15 +548,15 @@ void HelioStatementDialog::create_legal_page()
     // Confirm button (disabled until checkbox is checked)
     StateColor btn_bg_green = StateColor(
         std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
     StateColor btn_bg_disabled = StateColor(
         std::pair<wxColour, int>(wxColour(100, 100, 100), StateColor::Disabled),
         std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
 
     m_button_confirm = new Button(page_legal_panel, _L("Agree and Proceed"));
     m_button_confirm->SetBackgroundColor(btn_bg_disabled);
-    m_button_confirm->SetBorderColor(wxColour(0, 174, 66));
+    m_button_confirm->SetBorderColor(wxColour(110, 140, 160));
     // White text for all states including Disabled
     StateColor white_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Disabled),
                           std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Hovered),
@@ -617,11 +617,11 @@ void HelioStatementDialog::create_pat_page()
     // "Run Your First Optimization" button - use green primary style for visibility
     StateColor btn_bg_green = StateColor(
         std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
     
     Button* run_optimization_button = new Button(page_pat_panel, _L("Run Your First Optimization"));
     run_optimization_button->SetBackgroundColor(btn_bg_green);
-    run_optimization_button->SetBorderColor(wxColour(0, 174, 66));
+    run_optimization_button->SetBorderColor(wxColour(110, 140, 160));
     // Bright white text for maximum contrast on green background
     StateColor run_btn_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Disabled),
                             std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Hovered),
@@ -3066,7 +3066,7 @@ HelioPatNotEnoughDialog::HelioPatNotEnoughDialog(wxWindow* parent /*= nullptr*/)
     text->Wrap(FromDIP(450));
 
     auto helio_wiki_link = new LinkLabel(this, _L("Click for more details"), wxGetApp().app_config->get("language") =="zh_CN"? "https://wiki.helioadditive.com/zh/home" : "https://wiki.helioadditive.com/en/home");
-    helio_wiki_link->SeLinkLabelFColour(wxColour(0, 174, 66));
+    helio_wiki_link->SeLinkLabelFColour(wxColour(110, 140, 160));
 #ifdef __WXMSW__
     helio_wiki_link->SeLinkLabelBColour(GetBackgroundColour());
 #else
@@ -3334,10 +3334,10 @@ HelioRatingDialog::HelioRatingDialog(wxWindow *parent, int original, int optimiz
     // Print Plate button - primary action with green styling
     StateColor btn_bg_green = StateColor(
         std::pair<wxColour, int>(wxColour(61, 203, 115), StateColor::Hovered),
-        std::pair<wxColour, int>(wxColour(0, 174, 66), StateColor::Normal));
+        std::pair<wxColour, int>(wxColour(110, 140, 160), StateColor::Normal));
     auto m_button_print_plate = new Button(this, _L("Print Plate"));
     m_button_print_plate->SetBackgroundColor(btn_bg_green);
-    m_button_print_plate->SetBorderColor(wxColour(0, 174, 66));
+    m_button_print_plate->SetBorderColor(wxColour(110, 140, 160));
     StateColor white_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Disabled),
                           std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Hovered),
                           std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Pressed),

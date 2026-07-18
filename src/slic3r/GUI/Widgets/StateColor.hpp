@@ -13,7 +13,7 @@
 namespace ThemeColor {
 
 // Brand
-inline const wxColour BrandGreen{"#00AE42"};        // primary accent — buttons, selected borders, focus rings
+inline const wxColour BrandGreen{"#6E8CA0"};        // primary accent — buttons, selected borders, focus rings
 inline const wxColour BrandGreenHovered{"#3DCB73"}; // BrandGreen button hover state (== rgb 61,203,115)
 inline const wxColour BrandGreenPressed{"#1B8844"}; // BrandGreen button pressed state (== rgb 27,136,68)
 

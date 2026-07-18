@@ -2278,7 +2278,7 @@ namespace Slic3r
 
                         // Render as hyperlink with green color and underline
                         std::string label = _u8L("View Summary");
-                        ImColor HyperColor = ImColor(0, 174, 66, 255).Value;
+                        ImColor HyperColor = ImColor(110, 140, 160, 255).Value;
                         ImGui::PushStyleColor(ImGuiCol_Text, HyperColor.Value);
                         imgui.text(label.c_str());
                         ImGui::PopStyleColor();
@@ -2758,7 +2758,7 @@ namespace Slic3r
                 ImGuiWrapper& imgui = *wxGetApp().imgui();
                 auto link_text = [&](const std::string& label) {
                     ImVec2 wiki_part_size = ImGui::CalcTextSize(label.c_str());
-                    ImColor HyperColor = ImColor(0, 174, 66, 255).Value;
+                    ImColor HyperColor = ImColor(110, 140, 160, 255).Value;
                     ImGui::PushStyleColor(ImGuiCol_Text, HyperColor.Value);
                     imgui.text(label.c_str());
                     ImGui::PopStyleColor();
@@ -2781,7 +2781,7 @@ namespace Slic3r
                     };
                 auto link_text_set_to_optional = [&](const std::string& label) {
                     ImVec2 wiki_part_size = ImGui::CalcTextSize(label.c_str());
-                    ImColor HyperColor = ImColor(0, 174, 66, 255).Value;
+                    ImColor HyperColor = ImColor(110, 140, 160, 255).Value;
                     ImGui::PushStyleColor(ImGuiCol_Text, HyperColor.Value);
                     imgui.text(label.c_str());
                     ImGui::PopStyleColor();
@@ -2807,7 +2807,7 @@ namespace Slic3r
                     };
                 auto link_filament_group_wiki = [&](const std::string& label) {
                     ImVec2 wiki_part_size = ImGui::CalcTextSize(label.c_str());
-                    ImColor HyperColor = ImColor(0, 174, 66, 255).Value;
+                    ImColor HyperColor = ImColor(110, 140, 160, 255).Value;
                     ImGui::PushStyleColor(ImGuiCol_Text, HyperColor.Value);
                     imgui.text(label.c_str());
                     ImGui::PopStyleColor();
