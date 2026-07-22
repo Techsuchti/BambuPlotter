@@ -286,6 +286,8 @@ set(lisbslic3r_sources
     Platform.hpp
     Plotter/ArtworkMesh.cpp
     Plotter/ArtworkMesh.hpp
+    Plotter/FillHatcher.cpp
+    Plotter/FillHatcher.hpp
     Plotter/PathFlattener.cpp
     Plotter/PathFlattener.hpp
     Plotter/PathOptimizer.cpp

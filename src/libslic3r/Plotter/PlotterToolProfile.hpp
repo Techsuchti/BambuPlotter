@@ -1,6 +1,7 @@
 #ifndef slic3r_PlotterToolProfile_hpp_
 #define slic3r_PlotterToolProfile_hpp_
 
+#include <algorithm>
 #include <string>
 
 #include "libslic3r/Point.hpp"
@@ -56,9 +57,19 @@ struct PlotterToolProfile
     double draw_speed   = 30.;
     double lift_speed   = 10.;
 
-    // Mounted pen tip diameter (mm) - drives on-plate stroke width and the
-    // preview line width; the motion itself is tip-independent.
+    // Mounted pen tip diameter (mm) - drives on-plate stroke width, the
+    // preview line width and the hatch spacing; the motion itself is
+    // tip-independent.
     double pen_tip_width = 0.5;
+
+    // Filling of solid SVG areas ("plot what the SVG says").
+    bool   fill_enabled         = true;
+    int    hatch_pattern        = 0;    // 0 = lines, 1 = concentric
+    double hatch_spacing_factor = 0.9;  // spacing = pen_tip_width x factor
+    double hatch_angle          = 45.;  // degrees, lines pattern only
+
+    double hatch_spacing() const
+        { return std::max(pen_tip_width * hatch_spacing_factor, 0.05); }
 
     // Permit a single leading G28 in generated jobs. Only safe for pen mounts
     // whose tip clears the bed during Z homing; default is the safe choice.

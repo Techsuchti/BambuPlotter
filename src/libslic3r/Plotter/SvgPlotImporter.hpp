@@ -11,10 +11,9 @@ struct SvgImportOptions
 {
     // Curve flattening tolerance (mm).
     double curve_tolerance = 0.1;
-    // Import only shapes that have a stroke paint. When the document contains
-    // no stroked shape at all, fall back to importing every visible shape so
-    // fill-only exports (common from vector tools) still produce plottable
-    // outlines.
+    // Legacy (fills are first-class now: every painted shape imports its
+    // outline, filled shapes additionally report a SvgFillRegion). Kept for
+    // serialization compatibility; no longer filters anything.
     bool   prefer_stroked = true;
     // Paths shorter than this (mm) are dropped as noise.
     double min_path_length = 0.05;
@@ -28,11 +27,23 @@ struct SvgImportOptions
     }
 };
 
+// A filled area of the document: its closed contours plus the SVG fill rule
+// that decides which enclosed contours are holes (letters, eyes, ...).
+// Contours are doc space (mm, Y up), always treated as closed.
+struct SvgFillRegion
+{
+    PlotPaths contours;
+    bool      even_odd = false; // SVG fill-rule: evenodd vs nonzero
+};
+
 struct SvgImportResult
 {
     bool      ok = false;
     std::string error;
     PlotPaths paths;          // paper space, mm, Y up, origin bottom-left
+    // Filled shapes, for interior hatching (their outline contours are ALSO
+    // in `paths`, so hatchers must only add interior strokes).
+    std::vector<SvgFillRegion> fill_regions;
     double    width  = 0.;    // SVG document size (mm)
     double    height = 0.;
     size_t    shapes_total   = 0;

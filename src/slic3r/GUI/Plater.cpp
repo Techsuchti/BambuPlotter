@@ -24062,6 +24062,11 @@ void Plater::on_activate()
 // Get vector of extruder colors considering filament color, if extruder color is undefined.
 std::vector<std::string> Plater::get_extruder_colors_from_plater_config(const GCodeProcessorResult* const result) const
 {
+    // BambuPlotter: pen strokes preview as ink, not as filament plastic.
+    // Light tone: true black is invisible on the dark plate; the faithful
+    // ink-on-white-paper look needs a paper underlay (backlog).
+    if (plotter_mode())
+        return { "#E9E7E2" };
     if (wxGetApp().is_gcode_viewer() && result != nullptr)
         return result->extruder_colors;
     else {

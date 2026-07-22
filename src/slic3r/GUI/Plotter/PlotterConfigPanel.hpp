@@ -8,6 +8,8 @@
 class wxStaticText;
 class wxSpinCtrlDouble;
 class wxSpinDoubleEvent;
+class wxCheckBox;
+class wxChoice;
 class Button;
 
 namespace Slic3r { namespace GUI {
@@ -40,6 +42,10 @@ private:
     wxSpinCtrlDouble *m_travel_speed_spin = nullptr;
     wxSpinCtrlDouble *m_draw_speed_spin   = nullptr;
     wxSpinCtrlDouble *m_lift_speed_spin   = nullptr;
+    wxCheckBox       *m_fill_check        = nullptr;
+    wxChoice         *m_pattern_choice    = nullptr;
+    wxSpinCtrlDouble *m_fill_spacing_spin = nullptr;
+    wxSpinCtrlDouble *m_fill_angle_spin   = nullptr;
     bool              m_updating          = false;
 };
 

@@ -89,6 +89,35 @@ void PlotterConfigPanel::build_ui()
     m_lift_speed_spin   = add_spin(_L("Pen lift speed (mm/s)"), 1.0,  50.0, 1.0);
     root->Add(grid, 0, wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, gap);
 
+    // --- Fill (solid SVG areas) --------------------------------------------
+    add_title(_L("Fill"));
+    m_fill_check = new wxCheckBox(this, wxID_ANY, _L("Fill solid areas (hatching)"));
+    m_fill_check->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent &) { on_setting_changed(); });
+    root->Add(m_fill_check, 0, wxLEFT | wxRIGHT | wxTOP, gap);
+
+    auto *fgrid = new wxFlexGridSizer(3, 2, FromDIP(6), FromDIP(8));
+    fgrid->Add(new wxStaticText(this, wxID_ANY, _L("Pattern")), 0, wxALIGN_CENTER_VERTICAL);
+    m_pattern_choice = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(110), -1));
+    m_pattern_choice->Append(_L("Lines"));
+    m_pattern_choice->Append(_L("Concentric"));
+    m_pattern_choice->Bind(wxEVT_CHOICE, [this](wxCommandEvent &) { on_setting_changed(); });
+    fgrid->Add(m_pattern_choice, 0);
+    auto add_fill_spin = [&](const wxString &label, double lo, double hi, double inc) {
+        fgrid->Add(new wxStaticText(this, wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
+        auto *s = new wxSpinCtrlDouble(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                       wxSize(FromDIP(110), -1));
+        s->SetRange(lo, hi);
+        s->SetDigits(2);
+        s->SetIncrement(inc);
+        s->Bind(wxEVT_SPINCTRLDOUBLE, [this](wxSpinDoubleEvent &) { on_setting_changed(); });
+        fgrid->Add(s, 0);
+        return s;
+    };
+    // Spacing = tip width x factor: <1 overlaps for solid coverage.
+    m_fill_spacing_spin = add_fill_spin(_L("Spacing (x tip width)"), 0.3, 3.0, 0.05);
+    m_fill_angle_spin   = add_fill_spin(_L("Hatch angle (deg)"),     0.0, 180.0, 5.0);
+    root->Add(fgrid, 0, wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, gap);
+
     SetSizer(root);
 }
 
@@ -111,6 +140,14 @@ void PlotterConfigPanel::refresh()
     m_travel_speed_spin->SetValue(m_profile.travel_speed);
     m_draw_speed_spin->SetValue(m_profile.draw_speed);
     m_lift_speed_spin->SetValue(m_profile.lift_speed);
+    m_fill_check->SetValue(m_profile.fill_enabled);
+    m_pattern_choice->SetSelection(m_profile.hatch_pattern == 1 ? 1 : 0);
+    m_fill_spacing_spin->SetValue(m_profile.hatch_spacing_factor);
+    m_fill_angle_spin->SetValue(m_profile.hatch_angle);
+    const bool fill_on = m_profile.fill_enabled;
+    m_pattern_choice->Enable(fill_on);
+    m_fill_spacing_spin->Enable(fill_on);
+    m_fill_angle_spin->Enable(fill_on);
 
     m_updating = false;
     Layout();
@@ -143,6 +180,13 @@ void PlotterConfigPanel::on_setting_changed()
     m_profile.travel_speed  = m_travel_speed_spin->GetValue();
     m_profile.draw_speed    = m_draw_speed_spin->GetValue();
     m_profile.lift_speed    = m_lift_speed_spin->GetValue();
+    m_profile.fill_enabled         = m_fill_check->GetValue();
+    m_profile.hatch_pattern        = m_pattern_choice->GetSelection() == 1 ? 1 : 0;
+    m_profile.hatch_spacing_factor = m_fill_spacing_spin->GetValue();
+    m_profile.hatch_angle          = m_fill_angle_spin->GetValue();
+    m_pattern_choice->Enable(m_profile.fill_enabled);
+    m_fill_spacing_spin->Enable(m_profile.fill_enabled);
+    m_fill_angle_spin->Enable(m_profile.fill_enabled);
 
     const std::string path = PlotterCalibrationController::profile_path();
     boost::system::error_code ec;

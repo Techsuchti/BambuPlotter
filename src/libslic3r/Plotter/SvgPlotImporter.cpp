@@ -26,59 +26,78 @@ SvgImportResult import_image(const NSVGimage &image, const SvgImportOptions &opt
     result.width  = double(image.width) * px_to_mm;
     result.height = double(image.height) * px_to_mm;
 
-    // Decide whether to filter on stroked shapes.
-    bool any_stroked = false;
-    for (const NSVGshape *shape = image.shapes; shape != nullptr; shape = shape->next)
-        if ((shape->flags & NSVG_FLAGS_VISIBLE) != 0 && shape->stroke.type != NSVG_PAINT_NONE)
-            any_stroked = true;
-    const bool only_stroked = options.prefer_stroked && any_stroked;
-
     const PathFlattener flattener(options.curve_tolerance);
+
+    // Flattens one nanosvg path into a PlotPath (doc space, Y up, simplified).
+    // Returns an empty path when the geometry is degenerate or too short.
+    auto flatten_path = [&](const NSVGpath *path, bool force_closed) -> PlotPath {
+        PlotPath plot_path;
+        if (path->npts < 4)
+            return plot_path;
+        std::vector<Vec2d> pts;
+        pts.reserve(size_t(path->npts));
+        // pts layout: p0, then (c1, c2, p) per cubic segment.
+        for (int i = 0; i + 3 < path->npts; i += 3) {
+            const float *p = &path->pts[i * 2];
+            flattener.flatten_cubic(pts,
+                                    Vec2d(p[0], p[1]), Vec2d(p[2], p[3]),
+                                    Vec2d(p[4], p[5]), Vec2d(p[6], p[7]));
+        }
+
+        // SVG Y-down -> paper Y-up.
+        for (Vec2d &pt : pts)
+            pt.y() = result.height - pt.y();
+
+        // Drop consecutive duplicates.
+        auto last = std::unique(pts.begin(), pts.end(), [](const Vec2d &a, const Vec2d &b) {
+            return (a - b).norm() < 1e-6;
+        });
+        pts.erase(last, pts.end());
+
+        // SVG fills implicitly close open subpaths.
+        plot_path.closed = force_closed || path->closed != '\0';
+        // A closed path never repeats its first point; the generator adds
+        // the closing segment.
+        if (plot_path.closed && pts.size() > 2 && (pts.front() - pts.back()).norm() < 1e-6)
+            pts.pop_back();
+
+        simplify_dp(pts, options.simplify_tolerance);
+        plot_path.points = std::move(pts);
+        if (plot_path.empty() || plot_path.length() < options.min_path_length)
+            plot_path.points.clear();
+        return plot_path;
+    };
 
     for (const NSVGshape *shape = image.shapes; shape != nullptr; shape = shape->next) {
         ++result.shapes_total;
         if ((shape->flags & NSVG_FLAGS_VISIBLE) == 0)
             continue;
-        if (only_stroked && shape->stroke.type == NSVG_PAINT_NONE)
+        const bool has_stroke = shape->stroke.type != NSVG_PAINT_NONE;
+        const bool has_fill   = shape->fill.type != NSVG_PAINT_NONE;
+        // Unpainted shapes leave no ink in any renderer; skip them.
+        if (!has_stroke && !has_fill)
             continue;
         ++result.shapes_imported;
 
+        SvgFillRegion region;
+        region.even_odd = shape->fillRule == NSVG_FILLRULE_EVENODD;
+
         for (const NSVGpath *path = shape->paths; path != nullptr; path = path->next) {
-            if (path->npts < 4)
+            // Outline of every painted shape is drawn (a fill without its
+            // contour looks ragged at the hatch edges).
+            PlotPath outline = flatten_path(path, /*force_closed=*/!has_stroke && has_fill);
+            if (outline.empty())
                 continue;
-            std::vector<Vec2d> pts;
-            pts.reserve(size_t(path->npts));
-            // pts layout: p0, then (c1, c2, p) per cubic segment.
-            for (int i = 0; i + 3 < path->npts; i += 3) {
-                const float *p = &path->pts[i * 2];
-                flattener.flatten_cubic(pts,
-                                        Vec2d(p[0], p[1]), Vec2d(p[2], p[3]),
-                                        Vec2d(p[4], p[5]), Vec2d(p[6], p[7]));
+            if (has_fill) {
+                PlotPath contour = outline;
+                contour.closed   = true;
+                region.contours.emplace_back(std::move(contour));
             }
-
-            // SVG Y-down -> paper Y-up.
-            for (Vec2d &pt : pts)
-                pt.y() = result.height - pt.y();
-
-            // Drop consecutive duplicates.
-            auto last = std::unique(pts.begin(), pts.end(), [](const Vec2d &a, const Vec2d &b) {
-                return (a - b).norm() < 1e-6;
-            });
-            pts.erase(last, pts.end());
-
-            PlotPath plot_path;
-            plot_path.closed = path->closed != '\0';
-            // A closed path never repeats its first point; the generator adds
-            // the closing segment.
-            if (plot_path.closed && pts.size() > 2 && (pts.front() - pts.back()).norm() < 1e-6)
-                pts.pop_back();
-
-            simplify_dp(pts, options.simplify_tolerance);
-            plot_path.points = std::move(pts);
-            if (plot_path.empty() || plot_path.length() < options.min_path_length)
-                continue;
-            result.paths.emplace_back(std::move(plot_path));
+            result.paths.emplace_back(std::move(outline));
         }
+
+        if (has_fill && !region.contours.empty())
+            result.fill_regions.emplace_back(std::move(region));
     }
 
     result.ok = true;

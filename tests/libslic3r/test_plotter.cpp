@@ -5,6 +5,7 @@
 #include "libslic3r/TriangleMesh.hpp"
 
 #include "libslic3r/Plotter/ArtworkMesh.hpp"
+#include "libslic3r/Plotter/FillHatcher.hpp"
 #include "libslic3r/Plotter/PathFlattener.hpp"
 #include "libslic3r/Plotter/PathOptimizer.hpp"
 #include "libslic3r/Plotter/PlotterArtwork.hpp"
@@ -654,6 +655,97 @@ TEST_CASE("Plotter: preview G-code variant renders like a print but is never sen
     // The safety validator must reject the preview variant outright.
     const ValidationResult validation = PlotterSafetyValidator::validate(preview.gcode, profile);
     CHECK_FALSE(validation.ok);
+}
+
+TEST_CASE("Plotter: SVG import reports fill regions", "[Plotter]")
+{
+    // A filled ring (outer square with a square hole, evenodd) plus one
+    // stroked open polyline.
+    const std::string svg = R"(<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
+        <path fill="black" fill-rule="evenodd" d="M10,10 L50,10 L50,50 L10,50 Z M25,25 L35,25 L35,35 L25,35 Z"/>
+        <polyline points="60,60 90,60 90,90" fill="none" stroke="black" stroke-width="1"/>
+    </svg>)";
+
+    const SvgImportResult r = SvgPlotImporter::import_memory(svg);
+    REQUIRE(r.ok);
+    // Outlines: 2 fill contours + 1 stroked polyline.
+    CHECK(r.paths.size() == 3);
+    REQUIRE(r.fill_regions.size() == 1);
+    const SvgFillRegion &region = r.fill_regions.front();
+    CHECK(region.even_odd);
+    REQUIRE(region.contours.size() == 2);
+    for (const PlotPath &c : region.contours)
+        CHECK(c.closed);
+}
+
+TEST_CASE("Plotter: line hatching fills areas and respects holes", "[Plotter]")
+{
+    // 20x20 square with a 8x8 hole in the middle (evenodd).
+    SvgFillRegion region;
+    region.even_odd = true;
+    PlotPath outer, hole;
+    outer.closed = hole.closed = true;
+    outer.points = {Vec2d(0., 0.), Vec2d(20., 0.), Vec2d(20., 20.), Vec2d(0., 20.)};
+    hole.points  = {Vec2d(6., 6.), Vec2d(14., 6.), Vec2d(14., 14.), Vec2d(6., 14.)};
+    region.contours = {outer, hole};
+
+    HatchParams params;
+    params.pattern   = HatchPattern::Lines;
+    params.spacing   = 1.0;
+    params.angle_deg = 0.; // horizontal lines
+
+    const PlotPaths hatch = hatch_fill_regions({region}, params);
+    REQUIRE(!hatch.empty());
+    // Serpentine chaining: a handful of continuous zigzag strokes, not one
+    // stab per scanline (that would be ~19+ paths and as many pen lifts).
+    CHECK(hatch.size() <= 12);
+
+    double total = 0.;
+    for (const PlotPath &p : hatch) {
+        REQUIRE(p.points.size() >= 2);
+        CHECK_FALSE(p.closed);
+        total += p.length();
+        for (const Vec2d &pt : p.points) {
+            // Inside the outer square...
+            CHECK(pt.x() >= -0.01); CHECK(pt.x() <= 20.01);
+            CHECK(pt.y() >= -0.01); CHECK(pt.y() <= 20.01);
+        }
+        // ...and no drawn segment (scanline or connector) runs through the
+        // interior of the hole.
+        for (size_t i = 1; i < p.points.size(); ++i) {
+            const Vec2d mid = (p.points[i - 1] + p.points[i]) * 0.5;
+            const bool inside_hole = mid.x() > 6.3 && mid.x() < 13.7 && mid.y() > 6.3 && mid.y() < 13.7;
+            CHECK_FALSE(inside_hole);
+        }
+    }
+    // Coverage sanity: 20x20 minus 8x8 at 1mm spacing is ~336mm2 -> ~336mm
+    // of hatch lines plus short serpentine connectors.
+    CHECK(total > 250.);
+    CHECK(total < 450.);
+}
+
+TEST_CASE("Plotter: concentric hatching emits closed shrinking rings", "[Plotter]")
+{
+    SvgFillRegion region;
+    PlotPath square;
+    square.closed = true;
+    square.points = {Vec2d(0., 0.), Vec2d(20., 0.), Vec2d(20., 20.), Vec2d(0., 20.)};
+    region.contours = {square};
+
+    HatchParams params;
+    params.pattern = HatchPattern::Concentric;
+    params.spacing = 1.0;
+
+    const PlotPaths rings = hatch_fill_regions({region}, params);
+    // 20mm square at 1mm inset per generation -> ~9 rings.
+    REQUIRE(rings.size() >= 7);
+    CHECK(rings.size() <= 11);
+    double prev_len = std::numeric_limits<double>::max();
+    for (const PlotPath &ring : rings) {
+        CHECK(ring.closed);
+        CHECK(ring.length() < prev_len + 0.01);
+        prev_len = ring.length();
+    }
 }
 
 TEST_CASE("Plotter: cold 20mm square end-to-end (software half)", "[Plotter]")

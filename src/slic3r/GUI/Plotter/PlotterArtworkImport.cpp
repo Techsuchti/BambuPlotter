@@ -9,6 +9,7 @@
 #include "libslic3r/Model.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Plotter/ArtworkMesh.hpp"
+#include "libslic3r/Plotter/FillHatcher.hpp"
 #include "libslic3r/Plotter/PlotterProject.hpp"
 #include "libslic3r/Plotter/PlotterToolProfile.hpp"
 #include "libslic3r/Plotter/SvgPlotImporter.hpp"
@@ -131,12 +132,24 @@ PlotPaths collect_artwork_paper_paths(const Model &model,
             if (!vol->is_plotter_artwork())
                 continue;
             std::string import_error;
-            const PlotPaths doc = vol->plotter_artwork->import_paths(&import_error);
+            SvgImportResult imported = vol->plotter_artwork->import_result(&import_error);
+            PlotPaths doc = std::move(imported.paths);
             if (doc.empty()) {
                 if (error != nullptr)
                     *error = obj->name + ": " +
                              (import_error.empty() ? std::string("artwork has no strokes") : import_error);
                 return {};
+            }
+            // Solid SVG areas -> interior hatch strokes ("plot what the SVG
+            // says"); the outlines are already in `doc`.
+            if (profile.fill_enabled && !imported.fill_regions.empty()) {
+                HatchParams hatch_params;
+                hatch_params.pattern   = profile.hatch_pattern == 1 ? HatchPattern::Concentric : HatchPattern::Lines;
+                hatch_params.spacing   = profile.hatch_spacing();
+                hatch_params.angle_deg = profile.hatch_angle;
+                PlotPaths hatch = hatch_fill_regions(imported.fill_regions, hatch_params);
+                doc.insert(doc.end(), std::make_move_iterator(hatch.begin()),
+                           std::make_move_iterator(hatch.end()));
             }
             const Vec2d pivot = vol->plotter_artwork->pivot;
             for (const ModelInstance *inst : obj->instances) {

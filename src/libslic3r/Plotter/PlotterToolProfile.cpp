@@ -54,6 +54,10 @@ std::string PlotterToolProfile::serialize_json() const
     j["draw_speed"]          = draw_speed;
     j["lift_speed"]          = lift_speed;
     j["pen_tip_width"]       = pen_tip_width;
+    j["fill_enabled"]         = fill_enabled;
+    j["hatch_pattern"]        = hatch_pattern;
+    j["hatch_spacing_factor"] = hatch_spacing_factor;
+    j["hatch_angle"]          = hatch_angle;
     j["allow_homing_in_job"] = allow_homing_in_job;
     return j.dump(4);
 }
@@ -80,6 +84,10 @@ bool PlotterToolProfile::deserialize_json(const std::string &json_text, std::str
         p.draw_speed          = j.at("draw_speed").get<double>();
         p.lift_speed          = j.at("lift_speed").get<double>();
         p.pen_tip_width       = j.value("pen_tip_width", 0.5);
+        p.fill_enabled         = j.value("fill_enabled", true);
+        p.hatch_pattern        = j.value("hatch_pattern", 0);
+        p.hatch_spacing_factor = j.value("hatch_spacing_factor", 0.9);
+        p.hatch_angle          = j.value("hatch_angle", 45.);
         p.allow_homing_in_job = j.value("allow_homing_in_job", false);
         *this = p;
         return true;

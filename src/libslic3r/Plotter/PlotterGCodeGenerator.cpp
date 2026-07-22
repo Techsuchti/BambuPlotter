@@ -221,14 +221,22 @@ GCodeGenResult PlotterGCodeGenerator::generate_preview(const PlotPaths &paths,
       << "; LINE_WIDTH: " << fmt(std::max(pen_width_mm, 0.1)) << "\n"
       << "; FEATURE: Outer wall\n";
 
+    // Flatten the preview onto the paper plane: real pen heights (~15mm on
+    // this machine) render every lift as a vertical wall and turn the
+    // preview into a skyline. Ink at 0.2, lifts at 0.4 - looks like paper.
+    // XY motion and speeds are untouched; only the sendable job (generate())
+    // carries the real calibrated Z values.
+    PlotterToolProfile display = profile;
+    display.pen_down_z    = 0.2;
+    display.pen_contact_z = 0.3;
+    display.pen_up_z      = 0.4;
+
     // ~0.2x0.4mm line worth of E per drawn mm; the value only needs to be
     // positive, width/height come from the tags above.
-    emit_plot_moves(g, bed_paths, profile, 0.04, result);
+    emit_plot_moves(g, bed_paths, display, 0.04, result);
 
-    // Mirror the sendable job's presentation moves so the preview shows the
-    // same motion (bed coordinates: max_y + pen offset).
-    g << "G1 Z" << fmt(profile.present_z()) << " F" << feed_mm_min(profile.travel_speed) << "\n"
-      << "G1 Y" << fmt(profile.max_y + profile.pen_offset.y()) << " F" << feed_mm_min(profile.travel_speed) << "\n";
+    // Mirror the sendable job's bed-presentation slide (staying flat).
+    g << "G1 Y" << fmt(profile.max_y + profile.pen_offset.y()) << " F" << feed_mm_min(profile.travel_speed) << "\n";
 
     g << "; end of preview\n";
 

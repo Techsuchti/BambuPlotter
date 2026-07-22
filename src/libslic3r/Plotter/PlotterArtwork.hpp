@@ -25,17 +25,21 @@ struct ArtworkInfo
     Vec2d       pivot{0., 0.};    // doc-space point baked to the mesh origin
     SvgImportOptions options;
 
-    // Re-import strokes from the embedded markup with the stored options.
-    // Returns doc-space paths (mm, Y up), NOT pivot-shifted.
+    // Full re-import from the embedded markup (outline paths + fill
+    // regions), doc space (mm, Y up), NOT pivot-shifted.
+    SvgImportResult import_result(std::string *error = nullptr) const
+    {
+        SvgImportResult r = SvgPlotImporter::import_memory(svg_markup, options);
+        if (!r.ok && error != nullptr)
+            *error = r.error;
+        return r;
+    }
+
+    // Outline strokes only (see import_result for fills).
     PlotPaths import_paths(std::string *error = nullptr) const
     {
-        const SvgImportResult r = SvgPlotImporter::import_memory(svg_markup, options);
-        if (!r.ok) {
-            if (error != nullptr)
-                *error = r.error;
-            return {};
-        }
-        return r.paths;
+        SvgImportResult r = import_result(error);
+        return r.ok ? std::move(r.paths) : PlotPaths{};
     }
 
     template<class Archive> void serialize(Archive &ar)
