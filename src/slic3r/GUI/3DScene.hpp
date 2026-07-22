@@ -443,6 +443,9 @@ public:
 	    bool                is_modifier : 1;
 	    // Wheter or not this volume has been generated from the wipe tower
         bool                is_wipe_tower : 1;
+        // BambuPlotter: displays SVG plot artwork (ink-colored, never grey
+        // despite printable=false, no extruder recoloring)
+        bool                is_plotter_artwork : 1;
 	    // Wheter or not this volume has been generated from an extrusion path
 	    bool                is_extrusion_path : 1;
 	    // Wheter or not to always render this volume using its own alpha

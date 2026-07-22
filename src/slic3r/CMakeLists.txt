@@ -660,12 +660,16 @@ set(SLIC3R_GUI_SOURCES
     Utils/CertificateVerify.hpp
     Utils/CertificateVerify.cpp
     Utils/FrameBuffer.hpp
+    GUI/Plotter/PlotterArtworkImport.cpp
+    GUI/Plotter/PlotterArtworkImport.hpp
     GUI/Plotter/PlotterCalibrationController.cpp
     GUI/Plotter/PlotterCalibrationController.hpp
+    GUI/Plotter/PlotterConfigPanel.cpp
+    GUI/Plotter/PlotterConfigPanel.hpp
+    GUI/Plotter/PlotterController.cpp
+    GUI/Plotter/PlotterController.hpp
     GUI/Plotter/PlotterCalibrationDialog.cpp
     GUI/Plotter/PlotterCalibrationDialog.hpp
-    GUI/Plotter/PlotterModeDialog.cpp
-    GUI/Plotter/PlotterModeDialog.hpp
     GUI/Plotter/PlotterPrintJob.cpp
     GUI/Plotter/PlotterPrintJob.hpp
 )

@@ -41,6 +41,12 @@ void OrientJob::prepare_selection(std::vector<bool> obj_sel, bool only_one_plate
         bool selected = obj_sel[oidx];
         ModelObject* mo = model.objects[oidx];
 
+        // BambuPlotter: auto-orientation makes no sense for flat plot
+        // artwork and would tip it off the plate plane.
+        if (std::any_of(mo->volumes.begin(), mo->volumes.end(),
+                        [](const ModelVolume *v) { return v->is_plotter_artwork(); }))
+            continue;
+
         for (size_t inst_idx = 0; inst_idx < mo->instances.size(); ++inst_idx)
         {
             ModelInstance* mi = mo->instances[inst_idx];

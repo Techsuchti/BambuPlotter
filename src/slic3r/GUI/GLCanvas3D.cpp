@@ -7698,6 +7698,9 @@ bool GLCanvas3D::_init_main_toolbar()
         item.continuous_click = true;
         item.left.action_callback = [this]() { if (m_canvas != nullptr) wxPostEvent(m_canvas, SimpleEvent(EVT_GLTOOLBAR_ADD_PLATE)); };
         item.enabling_callback = []()->bool {return wxGetApp().plater()->can_add_plate(); };
+        // BambuPlotter: one sheet of paper = one plate; multi-plate and
+        // 3D-only tools are pruned from the toolbar (hidden, not removed).
+        item.visibility_callback = []()->bool { return !Plater::plotter_mode(); };
         if (!p_main_toolbar->add_item(item))
             return false;
 
@@ -7726,6 +7729,7 @@ bool GLCanvas3D::_init_main_toolbar()
             return false;
 
         item.name = "arrange";
+        item.visibility_callback = GLToolbarItem::Default_Visibility_Callback; // arrange stays in plotter mode
         item.icon_filename_callback = [](bool is_dark_mode)->std::string {
             return is_dark_mode ? "toolbar_arrange_dark.svg" : "toolbar_arrange.svg";
             };
@@ -7769,7 +7773,7 @@ bool GLCanvas3D::_init_main_toolbar()
             enable_layers_editing(false);
         };
         layers_editing_item.visibility_callback = [this, &p_main_toolbar]()->bool {
-            bool res = current_printer_technology() == ptFFF;
+            bool res = !Plater::plotter_mode() && current_printer_technology() == ptFFF;
             // turns off if changing printer technology
             if (!res && p_main_toolbar->is_item_visible("layersediting") && p_main_toolbar->is_item_pressed("layersediting"))
                 force_main_toolbar_left_action(get_main_toolbar_item_id("layersediting"));
@@ -7819,7 +7823,7 @@ bool GLCanvas3D::_init_main_toolbar()
                     if (agent) agent->track_update_property("split_to_objects", std::to_string(++split_to_objects_count));
                 }
                 };
-            item.visibility_callback = GLToolbarItem::Default_Visibility_Callback;
+            item.visibility_callback = []()->bool { return !Plater::plotter_mode(); };
             item.left.toggable = false;
             item.enabling_callback = []()->bool { return wxGetApp().plater()->can_split_to_objects(); };
             p_main_toolbar->add_item(item);
@@ -7839,7 +7843,7 @@ bool GLCanvas3D::_init_main_toolbar()
                     if (agent) agent->track_update_property("split_to_part", std::to_string(++split_to_part_count));
                 }
                 };
-            item.visibility_callback = GLToolbarItem::Default_Visibility_Callback;
+            item.visibility_callback = []()->bool { return !Plater::plotter_mode(); };
             item.enabling_callback = []()->bool { return wxGetApp().plater()->can_split_to_volumes(); };
             p_main_toolbar->add_item(item);
         }
@@ -7916,7 +7920,7 @@ bool GLCanvas3D::_init_main_toolbar()
                 };
             item.left.render_callback = GLToolbarItem::Default_Render_Callback;
             item.visible = true;
-            item.visibility_callback = [this]()->bool { return true; };
+            item.visibility_callback = [this]()->bool { return !Plater::plotter_mode(); };
             item.enabling_callback = [this]()->bool {
                 return wxGetApp().plater()->has_assmeble_view();
                 };

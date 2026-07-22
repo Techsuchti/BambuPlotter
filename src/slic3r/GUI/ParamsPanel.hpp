@@ -76,6 +76,7 @@ class ParamsPanel : public wxPanel
         void refresh_tabs();
 
 	protected:
+        bool m_force_hidden { false };
         wxBoxSizer* m_top_sizer { nullptr };
         wxBoxSizer* m_left_sizer { nullptr };
         wxBoxSizer* m_mode_sizer { nullptr };
@@ -160,6 +161,19 @@ class ParamsPanel : public wxPanel
 
         void notify_object_config_changed();
         void switch_to_object_if_has_object_configs();
+
+        // BambuPlotter: many code paths (set_active_tab, preset updates, tab
+        // activation) call Show() on this panel; in the plotter-first UI it
+        // must never become visible, so Show() is clamped once forced hidden.
+        bool Show(bool show = true) override
+        {
+            return wxPanel::Show(show && !m_force_hidden);
+        }
+        void set_force_hidden(bool force)
+        {
+            m_force_hidden = force;
+            if (force) wxPanel::Show(false);
+        }
 
         StaticBox* get_top_panel() { return m_top_panel; }
 

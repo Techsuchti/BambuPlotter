@@ -16,46 +16,6 @@ namespace {
 
 using NSVGimagePtr = std::unique_ptr<NSVGimage, void (*)(NSVGimage *)>;
 
-// Douglas-Peucker on Vec2d, preserving first/last points.
-void simplify_dp(std::vector<Vec2d> &pts, double tolerance)
-{
-    if (tolerance <= 0. || pts.size() < 3)
-        return;
-    std::vector<bool> keep(pts.size(), false);
-    keep.front() = keep.back() = true;
-    std::vector<std::pair<size_t, size_t>> stack{{0, pts.size() - 1}};
-    while (!stack.empty()) {
-        auto [first, last] = stack.back();
-        stack.pop_back();
-        double max_d = 0.;
-        size_t idx   = first;
-        const Vec2d &a = pts[first];
-        const Vec2d &b = pts[last];
-        const Vec2d ab = b - a;
-        const double ab_len = ab.norm();
-        for (size_t i = first + 1; i < last; ++i) {
-            const double d = ab_len < 1e-12 ?
-                (pts[i] - a).norm() :
-                std::abs(ab.x() * (a.y() - pts[i].y()) - ab.y() * (a.x() - pts[i].x())) / ab_len;
-            if (d > max_d) {
-                max_d = d;
-                idx   = i;
-            }
-        }
-        if (max_d > tolerance) {
-            keep[idx] = true;
-            stack.emplace_back(first, idx);
-            stack.emplace_back(idx, last);
-        }
-    }
-    std::vector<Vec2d> out;
-    out.reserve(pts.size());
-    for (size_t i = 0; i < pts.size(); ++i)
-        if (keep[i])
-            out.emplace_back(pts[i]);
-    pts = std::move(out);
-}
-
 SvgImportResult import_image(const NSVGimage &image, const SvgImportOptions &options)
 {
     // nanosvg scales path coordinates to the requested unit (mm at 96 dpi)

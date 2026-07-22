@@ -528,6 +528,7 @@ GLVolume::GLVolume(float r, float g, float b, float a, bool create_index_data)
     , is_modifier(false)
     , slice_error(false)
     , is_wipe_tower(false)
+    , is_plotter_artwork(false)
     , is_extrusion_path(false)
     , force_transparent(false)
     , force_native_color(false)
@@ -567,6 +568,14 @@ void GLVolume::set_render_color(const std::array<float, 4>& rgba)
 
 void GLVolume::set_render_color()
 {
+    // Plot artwork keeps its own ink color unconditionally: it is
+    // deliberately printable=false, so the UNPRINTABLE grey below must not
+    // apply, and extruder/hover recoloring makes no sense for pen strokes.
+    if (is_plotter_artwork) {
+        set_render_color(color);
+        return;
+    }
+
     bool outside = is_outside || is_below_printbed();
 
     if (force_native_color || force_neutral_color) {
@@ -1336,6 +1345,13 @@ int GLVolumeCollection::load_object_volume(
     v.set_color(color_from_model_volume(*model_volume));
     v.name = model_volume->name;
     v.is_text_shape = model_volume->is_text();
+    if (model_volume->is_plotter_artwork()) {
+        v.is_plotter_artwork = true;
+        v.set_color({0.12f, 0.13f, 0.15f, 1.0f}); // ink
+        // The stroke mesh is a dense unwelded soup; LOD simplification of it
+        // produces visual garbage at distance.
+        lod_enabled = false;
+    }
 
     const TriangleMesh* mesh_ptr = model_volume->mesh_ptr();
     new_volume->ori_mesh = mesh_ptr;
@@ -2310,7 +2326,7 @@ void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig *con
     }
 
     for (GLVolume* volume : volumes) {
-        if (volume == nullptr || volume->is_modifier || volume->is_wipe_tower || (volume->volume_idx() < 0))
+        if (volume == nullptr || volume->is_modifier || volume->is_wipe_tower || volume->is_plotter_artwork || (volume->volume_idx() < 0))
             continue;
 
         int extruder_id = volume->extruder_id - 1;

@@ -2669,6 +2669,59 @@ void ObjectList::load_mesh_object(const TriangleMesh &mesh, const wxString &name
 #endif /* _DEBUG */
 }
 
+void ObjectList::load_artwork_object(const TriangleMesh &mesh, const wxString &name,
+                                     const Slic3r::Plotter::ArtworkInfo &info,
+                                     const Vec2d &position, double scale,
+                                     double rotation_z)
+{
+    Model& model = wxGetApp().plater()->model();
+
+#ifdef _DEBUG
+    check_model_ids_validity(model);
+#endif /* _DEBUG */
+
+    std::vector<size_t> object_idxs;
+    ModelObject* new_object = model.add_object();
+    new_object->name = into_u8(name);
+    ModelInstance* instance = new_object->add_instance(); // each object should have at least one instance
+
+    ModelVolume* new_volume = new_object->add_volume(mesh);
+    new_volume->name = into_u8(name);
+    new_volume->plotter_artwork = info;
+    new_object->config.set_key_value("extruder", new ConfigOptionInt(1));
+    new_object->invalidate_bounding_box();
+    // Unlike load_mesh_object there is no translate(-bb.center()): the mesh
+    // was built centered on info.pivot, so the volume transform stays
+    // identity and the whole placement lives on the instance.
+
+    // BBS: backup
+    Slic3r::save_object_mesh(*new_object);
+
+    instance->set_offset(Vec3d(position.x(), position.y(), 0.));
+    instance->set_scaling_factor(Vec3d(scale, scale, scale));
+    if (rotation_z != 0.)
+        instance->set_rotation(Vec3d(0., 0., rotation_z));
+    // Artwork must never reach the slicing pipeline; ink color is enforced
+    // by GLVolume::is_plotter_artwork, so the unprintable grey never shows.
+    instance->printable = false;
+
+    new_object->ensure_on_bed();
+
+    //BBS init assmeble transformation
+    new_object->get_model()->set_assembly_pos(new_object);
+
+    object_idxs.push_back(model.objects.size() - 1);
+#ifdef _DEBUG
+    check_model_ids_validity(model);
+#endif /* _DEBUG */
+
+    paste_objects_into_list(object_idxs);
+
+#ifdef _DEBUG
+    check_model_ids_validity(model);
+#endif /* _DEBUG */
+}
+
 int ObjectList::load_mesh_part(const TriangleMesh &mesh, const wxString &name, const TextInfo &text_info, bool is_temp)
 {
     wxDataViewItem item = GetSelection();

@@ -56,6 +56,10 @@ struct PlotterToolProfile
     double draw_speed   = 30.;
     double lift_speed   = 10.;
 
+    // Mounted pen tip diameter (mm) - drives on-plate stroke width and the
+    // preview line width; the motion itself is tip-independent.
+    double pen_tip_width = 0.5;
+
     // Permit a single leading G28 in generated jobs. Only safe for pen mounts
     // whose tip clears the bed during Z homing; default is the safe choice.
     bool   allow_homing_in_job = false;

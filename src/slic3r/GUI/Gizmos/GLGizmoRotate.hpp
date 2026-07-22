@@ -174,12 +174,7 @@ protected:
         }
     }
     void on_render() override;
-    void on_render_for_picking() override
-    {
-        for (GLGizmoRotate& g : m_gizmos) {
-            g.render_for_picking();
-        }
-    }
+    void on_render_for_picking() override;
 
     void on_render_input_window(float x, float y, float bottom_limit) override;
 

@@ -105,7 +105,9 @@ bool GLGizmoFlatten::on_is_activable() const
 {
     // This is assumed in GLCanvas3D::do_rotate, do not change this
     // without updating that function too.
-    return m_parent.get_selection().is_single_full_instance();
+    // Plot artwork must never be laid on a face - it lives flat on the plate.
+    return m_parent.get_selection().is_single_full_instance()
+        && !m_parent.get_selection().contains_plotter_artwork();
 }
 
 void GLGizmoFlatten::on_start_dragging()

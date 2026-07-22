@@ -21,6 +21,11 @@ struct SvgImportOptions
     // Douglas-Peucker simplification tolerance applied after flattening (mm).
     // Zero disables simplification.
     double simplify_tolerance = 0.02;
+
+    template<class Archive> void serialize(Archive &ar)
+    {
+        ar(curve_tolerance, prefer_stroked, min_path_length, simplify_tolerance);
+    }
 };
 
 struct SvgImportResult

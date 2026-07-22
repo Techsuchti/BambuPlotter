@@ -32,6 +32,7 @@ class TriangleMesh;
 class GLVolume;
 struct TextInfo;
 enum class ModelVolumeType : int;
+namespace Plotter { struct ArtworkInfo; }
 
 // FIXME: broken build on mac os because of this is missing:
 typedef std::vector<std::string>                    t_config_option_keys;
@@ -309,6 +310,13 @@ public:
     void                add_new_model_object_from_old_object();
     void                load_shape_object(const std::string &type_name);
     void                load_mesh_object(const TriangleMesh &mesh, const wxString &name, bool center = true);
+    // BambuPlotter: add SVG plot artwork as a real plate object. The mesh is
+    // pre-centered on info.pivot (identity volume transform); the instance
+    // gets `position` (bed mm), uniform `scale`, and printable = false.
+    void                load_artwork_object(const TriangleMesh &mesh, const wxString &name,
+                                            const Slic3r::Plotter::ArtworkInfo &info,
+                                            const Vec2d &position, double scale,
+                                            double rotation_z = 0.);
     // BBS
     void                switch_to_object_process();
     int                 load_mesh_part(const TriangleMesh &mesh, const wxString &name, const TextInfo &text_info, bool is_temp);

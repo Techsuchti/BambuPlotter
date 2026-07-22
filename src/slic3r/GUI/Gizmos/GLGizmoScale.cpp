@@ -280,6 +280,12 @@ void GLGizmoScale3D::update_grabbers_data()
     m_grabbers[9].center = Vec3d(-box_half_size.x(), box_half_size.y(), -box_half_size.z());
     m_grabbers[9].color  = (b_asymmetric_scalling && m_hover_id == 7) ? CONSTRAINED_COLOR : GRABBER_UNIFORM_COL;
 
+    // Plot artwork scales uniformly only: keep the four corner grabbers,
+    // drop the per-axis ones (grabber 4 stays permanently disabled upstream).
+    const bool axis_scaling = !selection.contains_plotter_artwork();
+    for (int i : {0, 1, 2, 3, 5})
+        m_grabbers[i].enabled = axis_scaling;
+
     Transform3d t_model_matrix{ Transform3d::Identity() };
     const auto t_fullsize = get_grabber_size();
     for (int i = 0; i < m_grabbers.size(); ++i) {

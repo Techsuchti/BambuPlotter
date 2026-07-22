@@ -63,6 +63,17 @@ public:
 };
 
 // BBS: add partplate logic
+// BambuPlotter: plot artwork is never arranged (and, being printable=false,
+// would otherwise be force-moved to the virtual bed) - treat it as a fixed
+// obstacle at its current placement.
+static bool is_plotter_artwork_object(const ModelObject *mo)
+{
+    for (const ModelVolume *v : mo->volumes)
+        if (v->is_plotter_artwork())
+            return true;
+    return false;
+}
+
 static WipeTower get_wipe_tower(const Plater &plater, int plate_idx)
 {
     return WipeTower{plater.canvas3D()->get_wipe_tower_info(plate_idx)};
@@ -146,7 +157,8 @@ void ArrangeJob::prepare_selected() {
             ArrangePolygon&& ap = prepare_arrange_polygon(mo->instances[i]);
             //BBS: partplate_list preprocess
             //remove the locked plate's instances, neither in selected, nor in un-selected
-            bool locked = plate_list.preprocess_arrange_polygon(oidx, i, ap, inst_sel[i]);
+            bool locked = plate_list.preprocess_arrange_polygon(oidx, i, ap, inst_sel[i])
+                          || is_plotter_artwork_object(mo);
             if (!locked)
                 {
                 ArrangePolygons& cont = mo->instances[i]->printable ?
@@ -218,7 +230,8 @@ void ArrangeJob::prepare_all() {
             ArrangePolygon&& ap = prepare_arrange_polygon(mo->instances[i]);
             //BBS: partplate_list preprocess
             //remove the locked plate's instances, neither in selected, nor in un-selected
-            bool locked = plate_list.preprocess_arrange_polygon(oidx, i, ap, true);
+            bool locked = plate_list.preprocess_arrange_polygon(oidx, i, ap, true)
+                          || is_plotter_artwork_object(mo);
             if (!locked)
             {
                 ArrangePolygons& cont = mo->instances[i]->printable ? m_selected :m_unprintable;
@@ -414,7 +427,8 @@ void ArrangeJob::prepare_partplate() {
             ArrangePolygon&& ap = prepare_arrange_polygon(mo->instances[inst_idx]);
 
             ArrangePolygons &cont   = mo->instances[inst_idx]->printable ? m_selected : m_unprintable;
-            bool locked = plate_list.preprocess_arrange_polygon_other_locked(oidx, inst_idx, ap, in_plate);
+            bool locked = plate_list.preprocess_arrange_polygon_other_locked(oidx, inst_idx, ap, in_plate)
+                          || is_plotter_artwork_object(mo);
             if (!locked && in_plate)
             {
                 ap.itemid = cont.size();
@@ -504,7 +518,8 @@ void ArrangeJob::prepare_outside_plate() {
                 ARRANGE_LOG(debug) << object->name << " is outside!";
             }
             ArrangePolygon&& ap = prepare_arrange_polygon(instance);
-            ArrangePolygons &cont = !instance->printable ? m_unprintable : plate_locked ? m_locked : outside_plate ? m_selected : m_unselected;
+            ArrangePolygons &cont = is_plotter_artwork_object(object) ? m_locked :
+                                    !instance->printable ? m_unprintable : plate_locked ? m_locked : outside_plate ? m_selected : m_unselected;
             ap.itemid                      = cont.size();
             if (!outside_plate) {
                 plate_list.preprocess_arrange_polygon(obj_idx, inst_idx, ap, false);

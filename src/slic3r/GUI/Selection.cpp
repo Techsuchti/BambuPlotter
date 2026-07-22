@@ -859,6 +859,16 @@ bool Selection::is_single_full_instance() const
     return m_model->objects[object_idx]->volumes.size() == volumes_idxs.size();
 }
 
+bool Selection::contains_plotter_artwork() const
+{
+    for (unsigned int i : m_list) {
+        const GLVolume *v = (*m_volumes)[i];
+        if (v != nullptr && v->is_plotter_artwork)
+            return true;
+    }
+    return false;
+}
+
 bool Selection::is_any_connector() const
 {
     const int obj_idx = get_object_idx();

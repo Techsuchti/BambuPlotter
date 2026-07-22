@@ -1247,10 +1247,14 @@ void MainFrame::show_option(bool show)
         if (!m_slice_btn->IsShown()) {
             m_slice_btn->Show();
             m_print_btn->Show();
-            m_slice_option_btn->Show();
-            m_print_option_btn->Show();
-            split_line_icon->Show();
-            expand_program_holder->Show();
+            // BambuPlotter: the dropdown variants and Helio promo stay
+            // hidden permanently.
+            if (!Plater::plotter_mode()) {
+                m_slice_option_btn->Show();
+                m_print_option_btn->Show();
+                split_line_icon->Show();
+                expand_program_holder->Show();
+            }
             Layout();
         }
     }
@@ -1962,9 +1966,12 @@ wxBoxSizer* MainFrame::create_side_tools()
     auto slice_panel = new wxPanel(this,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxTRANSPARENT_WINDOW);
     auto print_panel = new wxPanel(this,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxTRANSPARENT_WINDOW);
 
-    m_slice_btn = new SideButton(slice_panel, _L("Slice plate"), "");
+    // BambuPlotter: the native two-step is Generate plot -> Send plot; the
+    // slice/print dropdown variants and the Helio promo make no sense here
+    // (hidden below, structure kept).
+    m_slice_btn = new SideButton(slice_panel, Plater::plotter_mode() ? _L("Generate plot") : _L("Slice plate"), "");
     m_slice_option_btn = new SideButton(slice_panel, "", "sidebutton_dropdown", 0, FromDIP(14));
-    m_print_btn = new SideButton(print_panel, _L("Print plate"), "");
+    m_print_btn = new SideButton(print_panel, Plater::plotter_mode() ? _L("Send plot") : _L("Print plate"), "");
     m_print_option_btn = new SideButton(print_panel, "", "sidebutton_dropdown", 0, FromDIP(14));
 
     auto slice_sizer = new wxBoxSizer(wxHORIZONTAL);
@@ -1980,6 +1987,12 @@ wxBoxSizer* MainFrame::create_side_tools()
     update_side_button_style();
     m_slice_option_btn->Enable();
     m_print_option_btn->Enable();
+    if (Plater::plotter_mode()) {
+        m_slice_option_btn->Hide();
+        m_print_option_btn->Hide();
+        expand_program_holder->Hide();
+        split_line_icon->Hide();
+    }
     sizer->Add( 0, 0, 1, wxEXPAND, 0);
     sizer->Add(expand_program_holder, 0, wxALIGN_CENTER, 0);
     sizer->Add(FromDIP(4), 0, 0, 0, 0);
@@ -2032,6 +2045,13 @@ wxBoxSizer* MainFrame::create_side_tools()
 
     m_slice_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
         {
+            // BambuPlotter: skip the 3D pre-checks (AMS, filament fit) that
+            // assume printable objects - generate the plot directly.
+            if (Plater::plotter_mode()) {
+                if (m_plater != nullptr)
+                    m_plater->generate_plot();
+                return;
+            }
             if (m_plater->is_background_process_update_scheduled())
                 m_plater->update(false, true);
 
@@ -2122,6 +2142,12 @@ wxBoxSizer* MainFrame::create_side_tools()
 
     m_print_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
         {
+            // BambuPlotter: the print button sends the generated plot.
+            if (Plater::plotter_mode()) {
+                if (m_plater != nullptr)
+                    m_plater->send_plot();
+                return;
+            }
             //this->m_plater->select_view_3D("Preview");
             if (m_print_select == ePrintAll || m_print_select == ePrintPlate || m_print_select == ePrintMultiMachine)
             {
@@ -2571,6 +2597,15 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
     if (enable_slice)
     {
         enable_slice = get_enable_slice_status();
+    }
+
+    // BambuPlotter: the 3D checks above would keep both buttons disabled
+    // forever (artwork is printable=false and nothing ever slices). Real
+    // state machine instead: Generate needs artwork + a calibrated profile,
+    // Send needs a fresh generated result.
+    if (Plater::plotter_mode() && m_plater != nullptr) {
+        enable_slice = m_plater->plotter_can_generate();
+        enable_print = m_plater->plotter_can_send();
     }
 
     bool old_slice_status = m_slice_btn->IsEnabled();

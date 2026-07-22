@@ -672,8 +672,10 @@ void GLGizmoRotate3D::on_set_state()
 
 void GLGizmoRotate3D::data_changed(bool is_serializing) {
     const Selection &selection = m_parent.get_selection();
-    enable_grabber(0, !selection.is_wipe_tower());
-    enable_grabber(1, !selection.is_wipe_tower());
+    // Plot artwork rotates about Z only: the X/Y rings are gone entirely.
+    const bool xy_allowed = !selection.is_wipe_tower() && !selection.contains_plotter_artwork();
+    enable_grabber(0, xy_allowed);
+    enable_grabber(1, xy_allowed);
     if (selection.is_wipe_tower()) {
         DynamicPrintConfig &config                    = wxGetApp().preset_bundle->prints.get_edited_preset().config;
         set_rotation(Vec3d(0., 0., (M_PI / 180.) * dynamic_cast<const ConfigOptionFloat *>(config.option("wipe_tower_rotation_angle"))->value));
@@ -722,14 +724,26 @@ void GLGizmoRotate3D::on_render()
 {
     glsafe(::glClear(GL_DEPTH_BUFFER_BIT));
 
-    if (m_hover_id == -1 || m_hover_id == 0)
+    const bool z_only = m_parent.get_selection().contains_plotter_artwork();
+
+    if (!z_only && (m_hover_id == -1 || m_hover_id == 0))
         m_gizmos[X].render();
 
-    if (m_hover_id == -1 || m_hover_id == 1)
+    if (!z_only && (m_hover_id == -1 || m_hover_id == 1))
         m_gizmos[Y].render();
 
     if (m_hover_id == -1 || m_hover_id == 2)
         m_gizmos[Z].render();
+}
+
+void GLGizmoRotate3D::on_render_for_picking()
+{
+    const bool z_only = m_parent.get_selection().contains_plotter_artwork();
+    for (GLGizmoRotate &g : m_gizmos) {
+        if (z_only && (&g == &m_gizmos[X] || &g == &m_gizmos[Y]))
+            continue;
+        g.render_for_picking();
+    }
 }
 
 GLGizmoRotate3D::RotoptimzeWindow::RotoptimzeWindow(ImGuiWrapper *   imgui,

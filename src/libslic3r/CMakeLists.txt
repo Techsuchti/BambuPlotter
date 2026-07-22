@@ -284,6 +284,8 @@ set(lisbslic3r_sources
     PlaceholderParser.hpp
     Platform.cpp
     Platform.hpp
+    Plotter/ArtworkMesh.cpp
+    Plotter/ArtworkMesh.hpp
     Plotter/PathFlattener.cpp
     Plotter/PathFlattener.hpp
     Plotter/PathOptimizer.cpp
@@ -292,6 +294,7 @@ set(lisbslic3r_sources
     Plotter/PlotterGCodeGenerator.hpp
     Plotter/PlotterJobBuilder.cpp
     Plotter/PlotterJobBuilder.hpp
+    Plotter/PlotterArtwork.hpp
     Plotter/PlotterPath.hpp
     Plotter/PlotterProject.cpp
     Plotter/PlotterProject.hpp

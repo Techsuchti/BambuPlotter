@@ -380,6 +380,23 @@ public:
     void reload_gcode_from_disk();
     void refresh_print();
 
+    // BambuPlotter ------------------------------------------------------
+    // This fork is a plotter-only app; the flag exists as the single switch
+    // point for every plotter-mode branch.
+    static bool plotter_mode() { return true; }
+    // "Generate plot": collect artwork -> movement-only job + preview
+    // variant -> show pen paths in the Preview tab. The plotter's "slice".
+    void generate_plot();
+    // "Send plot": pack the last generated result into a gcode.3mf, upload
+    // via FTPS and start it (LAN). Asks for confirmation first.
+    void send_plot();
+    bool plotter_can_generate() const;
+    bool plotter_can_send() const;
+    // Feeds generated preview G-code into the Preview tab WITHOUT wiping the
+    // model (unlike load_gcode, which force-creates a new project).
+    void load_plotter_gcode_preview(const std::string &gcode_utf8);
+    class PlotterController *plotter_controller();
+
     // OrcaSlicer calibration
     void calib_pa(const Calib_Params &params);
     void calib_flowrate(int pass);

@@ -60,7 +60,9 @@ std::string GLGizmoMove3D::get_tooltip() const
 
 void GLGizmoMove3D::data_changed(bool is_serializing)
 {
-    enable_grabber(2, !m_parent.get_selection().is_wipe_tower());
+    // Plot artwork moves in the plate plane only (no Z grabber).
+    const Selection &selection = m_parent.get_selection();
+    enable_grabber(2, !selection.is_wipe_tower() && !selection.contains_plotter_artwork());
     change_cs_by_selection();
 }
 

@@ -138,6 +138,11 @@
 #include "NotificationManager.hpp"
 #include "PresetComboBoxes.hpp"
 #include "MsgDialog.hpp"
+#include "Plotter/PlotterArtworkImport.hpp"
+#include "Plotter/PlotterConfigPanel.hpp"
+#include "Plotter/PlotterController.hpp"
+#include "Plotter/PlotterPrintJob.hpp"
+#include "libslic3r/Plotter/PlotterJobBuilder.hpp"
 #include "SingleChoiceDialog.hpp"
 #include "TextureImportDialog.hpp"
 #include "ProjectDirtyStateManager.hpp"
@@ -722,6 +727,8 @@ struct Sidebar::priv
     wxPanel* m_panel_printer_content = nullptr;
 
     ObjectList          *m_object_list{ nullptr };
+    // BambuPlotter sidebar configuration panel (calibration, pen, speeds).
+    PlotterConfigPanel  *plotter_config_panel{ nullptr };
     ObjectSettings      *object_settings{ nullptr };
     ObjectLayers        *object_layers{ nullptr };
 
@@ -3162,6 +3169,24 @@ Sidebar::Sidebar(Plater *parent)
     p->object_layers->Hide();
     p->sizer_params->Add(p->object_layers->get_sizer(), 0, wxEXPAND | wxTOP, 0);
 
+    if (Plater::plotter_mode()) {
+        // BambuPlotter: the sidebar holds plotter configuration + the native
+        // object list. The 3D preset sections stay constructed (presets and
+        // the plate pipeline are load-bearing) but hidden - hide every
+        // direct child of the scrolled sizer except the object-list block.
+        for (size_t i = 0; i < scrolled_sizer->GetItemCount(); ++i) {
+            wxSizerItem *item = scrolled_sizer->GetItem(i);
+            if (item == nullptr || item->GetSizer() == p->sizer_params)
+                continue;
+            if (wxWindow *w = item->GetWindow(); w != nullptr)
+                w->Hide();
+        }
+        if (auto params_panel = ((MainFrame*)parent->GetParent())->m_param_panel)
+            params_panel->set_force_hidden(true);
+        p->plotter_config_panel = new PlotterConfigPanel(p->scrolled);
+        scrolled_sizer->Insert(0, p->plotter_config_panel, 0, wxEXPAND);
+    }
+
     auto *sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(p->scrolled, 1, wxEXPAND);
     SetSizer(sizer);
@@ -4621,7 +4646,8 @@ void Sidebar::sync_ams_list(bool is_from_big_sync_btn)
     for (auto& c : p->combos_filament)
         c->update();
     // Expand filament list
-    p->m_filament_area_wrapper->Show();
+    if (!Plater::plotter_mode())
+        p->m_filament_area_wrapper->Show();
     recalc_filament_scroll_sizes();
     // BBS:Synchronized consumables information
     // auto calculation of flushing volumes
@@ -6519,6 +6545,9 @@ public:
     std::string                 delayed_error_message;
 
     wxTimer                     background_process_timer;
+
+    // BambuPlotter application state (profile + last generated plot).
+    PlotterController           plotter;
 
     std::string                 label_btn_export;
     std::string                 label_btn_send;
@@ -10641,6 +10670,20 @@ void Plater::priv::scale_selection_to_fit_print_volume()
 void Plater::priv::schedule_background_process()
 {
     delayed_error_message.clear();
+    if (Plater::plotter_mode()) {
+        // BambuPlotter: 3D slicing never runs. Every call here means the
+        // model or config changed, which makes the generated plot stale -
+        // "Send plot" stays disabled until the user regenerates.
+        PartPlate *plate = partplate_list.get_curr_plate();
+        if (plate != nullptr && plate->is_slice_result_valid()) {
+            plate->update_slice_result_valid_state(false);
+            partplate_list.get_current_fff_print().set_gcode_file_invalidated();
+        }
+        plotter.invalidate_result();
+        if (main_frame != nullptr)
+            main_frame->update_slice_print_status(MainFrame::eEventObjectUpdate, true, true);
+        return;
+    }
     // Trigger the timer event after 0.5s
     this->background_process_timer.Start(500, wxTIMER_ONE_SHOT);
     // Notify the Canvas3D that something has changed, so it may invalidate some of the layer editing stuff.
@@ -10767,6 +10810,13 @@ unsigned int Plater::priv::update_background_process(bool force_validation, bool
         this->partplate_list.update_slice_context_to_current_plate(background_process);
         this->preview->update_gcode_result(partplate_list.get_current_slice_result());
     }
+
+    // BambuPlotter: never apply/validate/slice the 3D pipeline. The plate
+    // switching above must still run; the apply below would clear the
+    // injected plot preview (APPLY_STATUS_INVALIDATED path) and emit 3D
+    // validation warnings that mean nothing for pen plotting.
+    if (Plater::plotter_mode())
+        return return_state;
 
     background_process.fff_print()->set_check_multi_filaments_compatibility(wxGetApp().app_config->get("enable_high_low_temp_mixed_printing") == "false");
 
@@ -11856,7 +11906,12 @@ void Plater::priv::set_current_panel(wxPanel* panel, bool no_slice)
             else
             {
                 //if (!this->m_slice_all)
-                if (!current_has_print_instances)
+                // BambuPlotter: a valid injected plot preview must survive
+                // re-entering the Preview tab (artwork has no print
+                // instances); a stale one is still cleared.
+                if (!current_has_print_instances
+                    && !(Plater::plotter_mode() && partplate_list.get_curr_plate() != nullptr &&
+                         partplate_list.get_curr_plate()->is_slice_result_valid()))
                     reset_gcode_toolpaths();
                 //this->q->refresh_print();
                 if (!preview->get_canvas3d()->is_initialized())
@@ -12902,6 +12957,13 @@ void Plater::priv::on_action_open_project(SimpleEvent&)
 //BBS: GUI refactor: slice plate
 void Plater::priv::on_action_slice_plate(SimpleEvent&)
 {
+    // BambuPlotter: every "slice plate" trigger (button, Cmd+R, posted
+    // events) means "Generate plot".
+    if (Plater::plotter_mode()) {
+        if (q != nullptr)
+            q->generate_plot();
+        return;
+    }
     if (q != nullptr) {
         BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << ":received slice plate event\n" ;
         //BBS update extruder params and speed table before slicing
@@ -15231,6 +15293,12 @@ void Plater::priv::on_action_publish(wxCommandEvent &event)
 
 void Plater::priv::on_action_print_plate(SimpleEvent&)
 {
+    // BambuPlotter: every "print plate" trigger means "Send plot".
+    if (Plater::plotter_mode()) {
+        if (q != nullptr)
+            q->send_plot();
+        return;
+    }
     if (q != nullptr) {
         BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << ":received print plate event\n" ;
     }
@@ -18444,6 +18512,13 @@ Plater::Plater(wxWindow *parent, MainFrame *main_frame)
 {
     // Initialization performed in the private c-tor
     enable_wireframe(true);
+
+    if (plotter_mode()) {
+        // Draw the calibrated paper rectangle on the plate from app start.
+        p->plotter.reload_profile();
+        if (p->plotter.profile_valid())
+            p->partplate_list.set_plot_rectangle(p->plotter.profile().pen_rect_on_bed(), true);
+    }
 }
 
 bool Plater::Show(bool show)
@@ -18701,6 +18776,33 @@ int Plater::load_project(wxString const &filename2,
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "filename is: " << PathSanitizer::sanitize(filename2.ToUTF8().data())
                             << "and originfile is: " << PathSanitizer::sanitize(originfile.ToUTF8().data());
+
+    // BambuPlotter: Cmd+O opens .bplot plot projects (or imports .svg
+    // artwork); 3mf projects belong to the official Bambu Studio.
+    if (plotter_mode()) {
+        wxString plot_filename = filename2;
+        if (plot_filename.IsEmpty()) {
+            const std::string projects_dir = data_dir() + "/plotter/projects";
+            boost::system::error_code ec;
+            fs::create_directories(fs::path(projects_dir), ec);
+            wxFileDialog dlg(this, _L("Open plot project"), from_u8(projects_dir), "",
+                             _L("Plot project or SVG") + " (*.bplot;*.svg)|*.bplot;*.svg",
+                             wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+            if (dlg.ShowModal() != wxID_OK)
+                return wxID_CANCEL;
+            plot_filename = dlg.GetPath();
+        }
+        const std::string lower = boost::algorithm::to_lower_copy(into_u8(plot_filename));
+        if (boost::ends_with(lower, ".bplot"))
+            return open_plotter_project(*this, into_u8(plot_filename)) ? wxID_YES : wxID_CANCEL;
+        if (boost::ends_with(lower, ".svg"))
+            return import_svg_as_artwork(*this, into_u8(plot_filename)) ? wxID_YES : wxID_CANCEL;
+        MessageDialog dlg(this, _L("BambuPlotter opens .bplot plot projects and imports .svg artwork."),
+                          _L("Open project"), wxOK | wxICON_WARNING);
+        dlg.ShowModal();
+        return wxID_CANCEL;
+    }
+
     auto filename = filename2;
     auto check = [&filename, this] (bool yes_or_no) {
         if (!yes_or_no && !wxGetApp().check_and_save_current_preset_changes(_L("Load project"),
@@ -18836,6 +18938,37 @@ int Plater::load_project(wxString const &filename2,
 // BBS: save logic
 int Plater::save_project(bool saveAs)
 {
+    // BambuPlotter: Cmd+S saves the .bplot plot project; this app never
+    // writes 3mf projects.
+    if (plotter_mode()) {
+        std::string path = p->plotter.project_path();
+        if (saveAs || path.empty()) {
+            const std::string projects_dir = data_dir() + "/plotter/projects";
+            boost::system::error_code ec;
+            fs::create_directories(fs::path(projects_dir), ec);
+            wxFileDialog dlg(this, _L("Save plot project"), from_u8(projects_dir),
+                             path.empty() ? wxString("plot.bplot") : from_u8(fs::path(path).filename().string()),
+                             "BambuPlotter project (*.bplot)|*.bplot",
+                             wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+            if (dlg.ShowModal() != wxID_OK)
+                return wxID_CANCEL;
+            path = into_u8(dlg.GetPath());
+            if (!boost::iends_with(path, ".bplot"))
+                path += ".bplot";
+        }
+        std::string error;
+        if (!save_plotter_project(*this, path, &error)) {
+            MessageDialog(this, from_u8(error), _L("Save project"), wxOK | wxICON_WARNING).ShowModal();
+            return wxID_CANCEL;
+        }
+        p->plotter.set_project_path(path);
+        p->set_project_filename(from_u8(path));
+        up_to_date(true, false);
+        up_to_date(true, true);
+        reset_project_dirty_after_save();
+        return wxID_YES;
+    }
+
     //if (up_to_date(false, false)) // should we always save
     //    return;
     auto filename = get_project_filename(".3mf");
@@ -20044,6 +20177,181 @@ void Plater::load_gcode(const wxString& filename)
     p->main_frame->update_slice_print_status(MainFrame::eEventPlateUpdate, false, false); //20250416 ban gcode to send print
 }
 
+// BambuPlotter ----------------------------------------------------------
+
+PlotterController *Plater::plotter_controller() { return &p->plotter; }
+
+bool Plater::plotter_can_generate() const
+{
+    if (!p->plotter.profile_valid())
+        return false;
+    for (const ModelObject *obj : p->model.objects)
+        for (const ModelVolume *vol : obj->volumes)
+            if (vol->is_plotter_artwork())
+                return true;
+    return false;
+}
+
+bool Plater::plotter_can_send() const
+{
+    const PartPlate *plate = p->partplate_list.get_curr_plate();
+    return p->plotter.has_current_result() && plate != nullptr && plate->is_slice_result_valid();
+}
+
+void Plater::generate_plot()
+{
+    if (!p->plotter.profile_valid()) {
+        p->plotter.reload_profile(); // the wizard may have just written it
+        if (!p->plotter.profile_valid()) {
+            MessageDialog dlg(wxGetApp().mainframe,
+                              _L("The plotter is not calibrated yet. Run Plotter Calibration first."),
+                              _L("Generate plot"), wxOK | wxICON_WARNING);
+            dlg.ShowModal();
+            return;
+        }
+    }
+
+    const PlotterController::GenerateOutput out = p->plotter.generate(p->model);
+    if (!out.ok) {
+        MessageDialog dlg(wxGetApp().mainframe, from_u8(out.error), _L("Generate plot"), wxOK | wxICON_WARNING);
+        dlg.ShowModal();
+        return;
+    }
+
+    load_plotter_gcode_preview(out.preview_gcode);
+
+    p->notification_manager->push_notification(NotificationType::CustomNotification,
+        NotificationManager::NotificationLevel::RegularNotificationLevel,
+        (boost::format(_u8L("Plot ready: %1% strokes, %2% mm drawing, %3% mm travel."))
+             % out.path_count % int(std::lround(out.draw_length)) % int(std::lround(out.travel_length))).str());
+}
+
+void Plater::load_plotter_gcode_preview(const std::string &gcode_utf8)
+{
+    // The plotter never arms this timer, but an already-queued poke must not
+    // land after injection and mark the fresh result stale.
+    p->background_process_timer.Stop();
+
+    // A real file: the sequential view's gcode window seeks it on disk.
+    const fs::path dir = fs::path(data_dir()) / "plotter";
+    boost::system::error_code ec;
+    fs::create_directories(dir, ec);
+    const fs::path gcode_path = dir / "preview.gcode";
+    {
+        std::ofstream out(gcode_path.string(), std::ios::trunc | std::ios::binary);
+        out << gcode_utf8;
+        if (!out) {
+            show_error(this, _L("Failed to write the preview G-code file."));
+            return;
+        }
+    }
+
+    // Show the Preview tab BEFORE loading: Preview::load_print_as_fff only
+    // loads while the panel is shown (same ordering as load_gcode).
+    wxGetApp().mainframe->select_tab(MainFrame::tpPreview);
+    p->set_current_panel(p->preview, true);
+
+    wxBusyCursor wait;
+
+    GCodeProcessor processor;
+    processor.init_filament_maps_and_nozzle_type_when_import_only_gcode();
+    try {
+        processor.process_file(gcode_path.string());
+    } catch (const std::exception &ex) {
+        show_error(this, ex.what());
+        return;
+    }
+
+    GCodeProcessorResult *current_result = p->partplate_list.get_current_slice_result();
+    Print &current_print = p->partplate_list.get_current_fff_print();
+    *current_result = std::move(processor.extract_result());
+
+    // Artwork instances are printable=false, so this apply creates zero
+    // PrintObjects; set_gcode_file_ready afterwards satisfies the
+    // psGCodeExport preview gate.
+    current_print.apply(this->model(), wxGetApp().preset_bundle->full_config());
+    current_print.apply_config_for_render(processor.export_config_for_render());
+    current_print.set_gcode_file_ready();
+
+    p->partplate_list.get_curr_plate()->update_slice_result_valid_state(true);
+    p->preview->reload_print(false, /*only_gcode=*/false);
+
+    // Pen-up moves are classified as Travel; make them visible by default so
+    // the plot shows lifts as well as strokes.
+    GLCanvas3D *canvas = p->preview->get_canvas3d();
+    auto &viewer = canvas->get_gcode_viewer();
+    const unsigned int travel_bit = 1u << static_cast<unsigned int>(Preview::OptionType::Travel);
+    if ((static_cast<unsigned int>(viewer.get_options_visibility_flags()) & travel_bit) == 0) {
+        viewer.set_options_visibility_from_flags(static_cast<unsigned int>(viewer.get_options_visibility_flags()) | travel_bit);
+        canvas->refresh_gcode_preview_render_paths();
+    }
+
+    canvas->zoom_to_plate(0);
+    p->main_frame->update_slice_print_status(MainFrame::eEventSliceUpdate, true, true);
+}
+
+void Plater::send_plot()
+{
+    if (!plotter_can_send()) {
+        MessageDialog dlg(wxGetApp().mainframe,
+                          _L("Generate the plot first - the artwork or settings changed since the last generation."),
+                          _L("Send plot"), wxOK | wxICON_WARNING);
+        dlg.ShowModal();
+        return;
+    }
+
+    DeviceManager *dev = wxGetApp().getDeviceManager();
+    MachineObject *machine = dev == nullptr ? nullptr : dev->get_selected_machine();
+    if (machine == nullptr) {
+        MessageDialog dlg(wxGetApp().mainframe,
+                          _L("No printer connected. Connect your A1 mini in the Device tab first."),
+                          _L("Send plot"), wxOK | wxICON_WARNING);
+        dlg.ShowModal();
+        return;
+    }
+
+    MessageDialog confirm(wxGetApp().mainframe,
+                          _L("Send the plot to the printer and start it now?\n\n"
+                             "Make sure the machine was homed BEFORE the pen was mounted, "
+                             "the pen is mounted and the paper is in place."),
+                          _L("Send plot"), wxYES_NO | wxICON_QUESTION);
+    if (confirm.ShowModal() != wxID_YES)
+        return;
+
+    std::string job_name = into_u8(get_project_name());
+    if (job_name.empty() || job_name == into_u8(_L("Untitled")))
+        job_name = "plot";
+
+    const Plotter::PlotterJob job = Plotter::PlotterJobBuilder::build(
+        p->plotter.last_paths(), p->plotter.profile(), job_name,
+        resources_dir() + "/plotter");
+    if (!job.ok) {
+        MessageDialog dlg(wxGetApp().mainframe, from_u8(job.error), _L("Send plot"), wxOK | wxICON_ERROR);
+        dlg.ShowModal();
+        return;
+    }
+
+    ProgressDialog progress(_L("Sending plot"), _L("Preparing") + dots, 100, wxGetApp().mainframe,
+                            wxPD_APP_MODAL | wxPD_AUTO_HIDE);
+    const PlotterPrintResult result = PlotterPrintJob::upload_and_start(
+        machine, job, [&progress](const std::string &stage, int percent) {
+            progress.Update(std::clamp(percent, 0, 99), from_u8(stage));
+        });
+    progress.Update(100, _L("Done"));
+
+    if (!result.ok) {
+        MessageDialog dlg(wxGetApp().mainframe, from_u8(result.error), _L("Send plot"), wxOK | wxICON_ERROR);
+        dlg.ShowModal();
+        return;
+    }
+
+    MessageDialog done(wxGetApp().mainframe,
+                       _L("Plot uploaded and started. The printer now runs the job standalone - "
+                          "you can disconnect this computer."),
+                       _L("Send plot"), wxOK | wxICON_INFORMATION);
+    done.ShowModal();
+}
+
 void Plater::reload_gcode_from_disk()
 {
     wxString filename(m_last_loaded_gcode);
@@ -20532,7 +20840,9 @@ bool Plater::load_svg(const wxArrayString &filenames, bool from_toolbar_or_file_
         const wxString &filename = filenames[0];
         if (boost::iends_with(filenames[0].ToStdString(), ".svg")) {
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "," << __FILE__ << PathSanitizer::sanitize(filename.ToUTF8().data());
-            emboss_svg(filename, from_toolbar_or_file_menu);
+            // BambuPlotter: SVG becomes plot artwork on the plate, never an
+            // embossed 3D volume.
+            import_svg_as_artwork(*this, into_u8(filename));
             return true;
         } else {
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "," << __FILE__ << ",fail:" << PathSanitizer::sanitize(filename.ToUTF8().data());
@@ -20592,6 +20902,12 @@ bool Plater::load_files(const wxArrayString& filenames)
     const std::regex pattern_drop(".*[.](stp|step|stl|oltp|obj|amf|3mf|svg|gltf|glb|fbx)", std::regex::icase);
     const std::regex pattern_gcode_drop(".*[.](gcode|g)", std::regex::icase);
 
+    // BambuPlotter: a dropped .bplot opens as the plot project.
+    if (filenames.size() == 1 && boost::iends_with(filenames[0].ToStdString(), ".bplot")) {
+        load_project(filenames[0]);
+        return true;
+    }
+
     std::vector<fs::path> normal_paths;
     std::vector<fs::path> gcode_paths;
     if (!load_same_type_files(filenames)) {
@@ -20613,6 +20929,16 @@ bool Plater::load_files(const wxArrayString& filenames)
             gcode_paths.push_back(std::move(path));
         else
             continue;
+    }
+
+    // BambuPlotter is a plotter-only app: the plate holds SVG artwork and
+    // .bplot projects, nothing else.
+    if (!normal_paths.empty() || !gcode_paths.empty()) {
+        MessageDialog msg(wxGetApp().mainframe,
+                          _L("BambuPlotter plots SVG artwork. Import an .svg file (or open a .bplot project) instead."),
+                          _L("Unsupported file type"), wxOK | wxICON_WARNING);
+        msg.ShowModal();
+        return true;
     }
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(": normal_paths %1%, gcode_paths %2%")%normal_paths.size() %gcode_paths.size();
@@ -20873,6 +21199,29 @@ void Plater::add_file()
     wxArrayString input_files;
     wxGetApp().import_model(this, input_files);
     if (input_files.empty()) return;
+
+    // BambuPlotter: plotter-only app — Import brings in SVG artwork, nothing
+    // else. Everything below (3MF/STL/... routing) stays for reference but
+    // is unreachable.
+    {
+        wxArrayString svg_files;
+        bool          has_other = false;
+        for (const auto &file : input_files) {
+            if (boost::iends_with(file.ToStdString(), ".svg"))
+                svg_files.push_back(file);
+            else
+                has_other = true;
+        }
+        if (has_other) {
+            MessageDialog msg(wxGetApp().mainframe,
+                              _L("BambuPlotter plots SVG artwork. Import an .svg file (or open a .bplot project) instead."),
+                              _L("Unsupported file type"), wxOK | wxICON_WARNING);
+            msg.ShowModal();
+        }
+        if (!svg_files.empty() && load_svg(svg_files, true))
+            statistics_burial_data(svg_files[0].utf8_string());
+        return;
+    }
 
     std::vector<fs::path> paths;
     for (const auto &file : input_files) paths.emplace_back(into_path(file));

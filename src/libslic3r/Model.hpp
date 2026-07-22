@@ -17,6 +17,7 @@
 #include "enum_bitmask.hpp"
 #include "TextConfiguration.hpp"
 #include "EmbossShape.hpp"
+#include "Plotter/PlotterArtwork.hpp"
 //BBS: add bbs 3mf
 #include "Format/bbs_3mf.hpp"
 #include "libslic3r/Format/AssemblyStepsJson.hpp"
@@ -976,6 +977,10 @@ public:
     // Is set only when volume is Embossed Shape
     // Contain 2d information about embossed shape to be editabled
     std::optional<EmbossShape> emboss_shape;
+    // BambuPlotter: set only when this volume displays imported SVG plot
+    // artwork. Holds the stroke source data; the mesh is display-only and
+    // G-code is always regenerated from these paths (see PlotterArtwork.hpp).
+    std::optional<Plotter::ArtworkInfo> plotter_artwork;
     // A parent object owning this modifier volume.
     ModelObject*        get_object() const { return this->object; }
     ModelVolumeType     type() const { return m_type; }
@@ -987,6 +992,7 @@ public:
 	bool                is_support_blocker()    const { return m_type == ModelVolumeType::SUPPORT_BLOCKER; }
 	bool                is_support_modifier()   const { return m_type == ModelVolumeType::SUPPORT_BLOCKER || m_type == ModelVolumeType::SUPPORT_ENFORCER; }
     bool                is_svg() const { return emboss_shape.has_value(); }
+    bool                is_plotter_artwork() const { return plotter_artwork.has_value(); }
     bool                is_the_only_one_part() const; // behave like an object
     t_model_material_id material_id() const { return m_material_id; }
     void                set_material_id(t_model_material_id material_id);
@@ -1237,6 +1243,7 @@ private:
         , seam_facets(other.seam_facets)
         , mmu_segmentation_facets(other.mmu_segmentation_facets)
         , m_text_info(other.m_text_info), emboss_shape(other.emboss_shape)
+        , plotter_artwork(other.plotter_artwork)
         , m_part_guid(other.m_part_guid), m_assembly_src_guid(other.m_assembly_src_guid)
     {
 		assert(this->id().valid());
@@ -1263,7 +1270,8 @@ private:
         name(other.name), source(other.source), m_mesh(new TriangleMesh(std::move(mesh))), config(other.config), m_type(other.m_type), object(object), m_transformation(other.m_transformation),
         m_assemble_transformation(other.m_assemble_transformation),
         m_assemble_initialized(other.m_assemble_initialized),
-        emboss_shape(other.emboss_shape)
+        emboss_shape(other.emboss_shape),
+        plotter_artwork(other.plotter_artwork)
     {
 		assert(this->id().valid());
         assert(this->config.id().valid());
@@ -1330,6 +1338,7 @@ private:
         mesh_changed |= t != mmu_segmentation_facets.timestamp();
         cereal::load_by_value(ar, config);
         cereal::load(ar, emboss_shape);
+        cereal::load(ar, plotter_artwork);
 		assert(m_mesh);
 		if (has_convex_hull) {
 			cereal::load_optional(ar, m_convex_hull);
@@ -1350,6 +1359,7 @@ private:
         cereal::save_by_value(ar, mmu_segmentation_facets);
         cereal::save_by_value(ar, config);
         cereal::save(ar, emboss_shape);
+        cereal::save(ar, plotter_artwork);
 		if (has_convex_hull)
 			cereal::save_optional(ar, m_convex_hull);
 	}

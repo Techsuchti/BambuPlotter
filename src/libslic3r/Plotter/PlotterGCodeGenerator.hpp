@@ -34,6 +34,19 @@ public:
     // ideally already ordered by PathOptimizer.
     static GCodeGenResult generate(const PlotPaths &paths, const PlotterToolProfile &profile);
 
+    // PREVIEW-ONLY variant, NEVER sendable: identical motion to generate(),
+    // but pen-down strokes carry synthetic relative extrusion (M83 + E) and
+    // BambuStudio parser tags ("; FEATURE:", "; LINE_WIDTH:",
+    // "; LAYER_HEIGHT:") so the G-code preview renders them like a
+    // one-layer print; pen-up moves stay travels. XY is emitted in PEN-TIP
+    // bed coordinates (machine XY + profile.pen_offset) so the rendered ink
+    // lands exactly on the artwork objects. The safety validator rejects
+    // this output by design (E axis); call only after generate() succeeded
+    // on the same paths.
+    static GCodeGenResult generate_preview(const PlotPaths &paths,
+                                           const PlotterToolProfile &profile,
+                                           double pen_width_mm = 0.5);
+
     // The hard-coded 20 mm calibration square used for the first cold
     // hardware test (implementation-order step 12): a single closed square
     // with its lower-left corner at `corner` (paper space).

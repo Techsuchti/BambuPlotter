@@ -362,6 +362,12 @@ void GizmoObjectManipulation::change_rotation_value(int axis, double value)
     if (std::abs(m_cache.rotation_rounded(axis) - value) < EPSILON)
         return;
 
+    // Plot artwork rotates about Z only; ignore X/Y edits from the panel.
+    if (axis != 2 && m_glcanvas.get_selection().contains_plotter_artwork()) {
+        this->UpdateAndShow(true);
+        return;
+    }
+
     Vec3d rotation = m_cache.rotation;
     rotation(axis) = value;
 
@@ -481,7 +487,9 @@ void GizmoObjectManipulation::do_scale(int axis, const Vec3d &scale) const
     if (selection.is_single_volume_or_modifier() && !is_local_coordinates())
         transformation_type.set_relative();
 
-    Vec3d scaling_factor = m_uniform_scale ? scale(axis) * Vec3d::Ones() : scale;
+    // Plot artwork always scales uniformly, regardless of the checkbox.
+    const bool force_uniform = m_uniform_scale || selection.contains_plotter_artwork();
+    Vec3d scaling_factor = force_uniform ? scale(axis) * Vec3d::Ones() : scale;
     limit_scaling_ratio(scaling_factor);
 
     selection.setup_cache();
@@ -1609,6 +1617,14 @@ void GizmoObjectManipulation::do_render_scale_input_window(ImGuiWrapper* imgui_w
     //    imgui_wrapper->bbl_checkbox(_L("uniform scale"), uniform_scale_only);
     //    imgui_wrapper->disabled_end();
     //} else {
+    // BambuPlotter: artwork is always uniformly scaled - lock the checkbox on.
+    if (m_glcanvas.get_selection().contains_plotter_artwork()) {
+        uniform_scale = true;
+        imgui_wrapper->disabled_begin(true);
+        imgui_wrapper->bbl_checkbox(_L("uniform scale"), uniform_scale);
+        imgui_wrapper->disabled_end();
+        uniform_scale = true; // ignore any (impossible) toggle
+    } else
         imgui_wrapper->bbl_checkbox(_L("uniform scale"), uniform_scale);
     //}
     if (uniform_scale != this->m_uniform_scale) { this->set_uniform_scaling(uniform_scale); }

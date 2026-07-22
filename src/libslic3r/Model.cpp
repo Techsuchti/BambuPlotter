@@ -3319,6 +3319,11 @@ int ModelVolume::extruder_id() const
 
 bool ModelVolume::is_splittable() const
 {
+    // Plot artwork is a triangle soup of per-segment shells; splitting it
+    // into thousands of segment objects would be destructive nonsense.
+    if (is_plotter_artwork())
+        return false;
+
     // the call mesh.is_splittable() is expensive, so cache the value to calculate it only once
     if (m_is_splittable == -1)
         m_is_splittable = its_is_splittable(this->mesh().its);
