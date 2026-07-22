@@ -79,6 +79,15 @@ public:
     void set_pen_mounted(bool mounted) { m_pen_mounted = mounted; }
     bool pen_mounted() const { return m_pen_mounted; }
 
+    // The printer's own home flags (live telemetry). True means the firmware
+    // still knows its origin - position can be re-established WITHOUT
+    // homing, via an absolute park move (safe with the pen mounted).
+    bool machine_reports_homed() const { return machine_homed(); }
+    // Re-establish dead reckoning from a known firmware origin without G28.
+    // Use when the wizard was reopened and only the app-side position was
+    // lost. Requires machine_reports_homed().
+    bool sync_position(std::string *error = nullptr);
+
     // --- verified-safe motions ----------------------------------------------
     // All return false with `error` set when refused.
     bool home(std::string *error = nullptr);
@@ -117,6 +126,11 @@ private:
     State              m_state = State::Disconnected;
     Vec3d              m_position{0., 0., 0.};
     bool               m_pen_mounted = false;
+    // Homing handshake: the printer's home flags may still be TRUE from a
+    // previous session when G28 is sent, so "flags true" alone must not be
+    // trusted until they were seen dropping (or a timeout passes).
+    bool               m_seen_unhomed = false;
+    int                m_homing_ticks = 0;
 };
 
 } // namespace GUI

@@ -152,7 +152,14 @@ GCodeGenResult PlotterGCodeGenerator::generate(const PlotPaths &paths, const Plo
 
     emit_plot_moves(g, machine_paths, profile, 0., result);
 
-    // Finish: pen up, wait for motion to complete, then reset heater targets.
+    // Present the finished sheet: pen high first (upward-only, always safe),
+    // then the bed slides to max Y — on the A1 mini that pushes the paper
+    // toward the user for easy removal. Both targets stay inside the
+    // calibrated limits the validator enforces.
+    g << "G1 Z" << fmt(profile.present_z()) << " F" << feed_mm_min(profile.travel_speed) << "\n"
+      << "G1 Y" << fmt(profile.max_y) << " F" << feed_mm_min(profile.travel_speed) << "\n";
+
+    // Finish: wait for motion to complete, then reset heater targets.
     // The A1 firmware preheats the nozzle (~75C) on its own when a job starts
     // and does NOT cool down at FINISH unless the job commands it — turning
     // heaters OFF is the one thermal command a plotter job must contain.
@@ -217,6 +224,11 @@ GCodeGenResult PlotterGCodeGenerator::generate_preview(const PlotPaths &paths,
     // ~0.2x0.4mm line worth of E per drawn mm; the value only needs to be
     // positive, width/height come from the tags above.
     emit_plot_moves(g, bed_paths, profile, 0.04, result);
+
+    // Mirror the sendable job's presentation moves so the preview shows the
+    // same motion (bed coordinates: max_y + pen offset).
+    g << "G1 Z" << fmt(profile.present_z()) << " F" << feed_mm_min(profile.travel_speed) << "\n"
+      << "G1 Y" << fmt(profile.max_y + profile.pen_offset.y()) << " F" << feed_mm_min(profile.travel_speed) << "\n";
 
     g << "; end of preview\n";
 

@@ -2576,6 +2576,11 @@ void MainFrame::update_side_button_style()
 
 void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_slice, bool can_print)
 {
+    // Guard construction-time calls: the Plater ctor can trigger this (via
+    // schedule_background_process) before m_plater is assigned.
+    if (m_plater == nullptr)
+        return;
+
     bool enable_print = true, enable_slice = true;
 
     if (!can_slice)
@@ -2606,6 +2611,11 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
     if (Plater::plotter_mode() && m_plater != nullptr) {
         enable_slice = m_plater->plotter_can_generate();
         enable_print = m_plater->plotter_can_send();
+        // Stock event handlers relabel these to Slice/Print plate; pin ours.
+        if (m_slice_btn->GetLabel() != _L("Generate plot"))
+            m_slice_btn->SetLabel(_L("Generate plot"));
+        if (m_print_btn->GetLabel() != _L("Send plot"))
+            m_print_btn->SetLabel(_L("Send plot"));
     }
 
     bool old_slice_status = m_slice_btn->IsEnabled();

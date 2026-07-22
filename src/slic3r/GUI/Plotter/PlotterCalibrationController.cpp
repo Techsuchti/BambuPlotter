@@ -79,8 +79,15 @@ void PlotterCalibrationController::update()
         m_state = State::NeedsHoming;
         break;
     case State::Homing:
-        if (machine_homed()) {
-            // Home flags are set; establish a known position via an absolute
+        // The home flags can still read TRUE from before this G28 (stale
+        // telemetry / previously homed machine). Only trust them after they
+        // were seen dropping while the axes home - or, if they never drop
+        // within the window (report interval missed the transient), fall
+        // back to a timeout well beyond a full homing cycle.
+        if (!machine_homed()) {
+            m_seen_unhomed = true;
+        } else if (m_seen_unhomed || ++m_homing_ticks > 90 /* x500ms = 45s */) {
+            // Homed for real; establish a known position via an absolute
             // park move, after which dead reckoning is valid.
             std::string err;
             if (send_absolute_move(Vec3d(PARK_X, PARK_Y, PARK_Z), xy_speed, &err))
@@ -132,7 +139,31 @@ bool PlotterCalibrationController::home(std::string *error)
         return false;
     }
     m_machine->GetAxis()->Ctrl_GoHome();
-    m_state = State::Homing;
+    m_seen_unhomed = false;
+    m_homing_ticks = 0;
+    m_state        = State::Homing;
+    return true;
+}
+
+bool PlotterCalibrationController::sync_position(std::string *error)
+{
+    if (m_machine == nullptr) {
+        set_error(error, "no printer connected");
+        return false;
+    }
+    if (!machine_homed()) {
+        set_error(error, "the printer lost its origin (power cycle?) - it must be homed (remove the pen first)");
+        return false;
+    }
+    // Absolute park move: the firmware knows its origin, so after this the
+    // commanded position IS the position. Park Z keeps a mounted pen tip
+    // well above the bed.
+    std::string err;
+    if (!send_absolute_move(Vec3d(PARK_X, PARK_Y, PARK_Z), xy_speed, &err)) {
+        set_error(error, err);
+        return false;
+    }
+    m_state = State::Parking;
     return true;
 }
 

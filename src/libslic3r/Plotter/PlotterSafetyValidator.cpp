@@ -246,8 +246,8 @@ ValidationResult PlotterSafetyValidator::validate(const std::string &gcode, cons
             if (z) {
                 if (*z < profile.pen_down_z - BOUNDS_EPSILON)
                     add_issue(line, "Z target below the calibrated safe pen-down height");
-                else if (*z > profile.pen_up_z + BOUNDS_EPSILON)
-                    add_issue(line, "Z target above the calibrated pen-up height");
+                else if (*z > profile.present_z() + BOUNDS_EPSILON)
+                    add_issue(line, "Z target above the presentation height");
                 last_z  = *z;
                 z_known = true;
             }
@@ -271,8 +271,8 @@ ValidationResult PlotterSafetyValidator::validate(const std::string &gcode, cons
         result.issues.push_back({line_number, {}, "file contains no motion commands"});
     else if (!z_known)
         result.issues.push_back({line_number, {}, "file never sets the pen height (Z)"});
-    else if (std::abs(last_z - profile.pen_up_z) > BOUNDS_EPSILON)
-        result.issues.push_back({line_number, {}, "job must end with the pen raised to pen_up_z"});
+    else if (last_z < profile.pen_up_z - BOUNDS_EPSILON)
+        result.issues.push_back({line_number, {}, "job must end with the pen raised (at least pen_up_z)"});
 
     result.ok = result.issues.empty();
     return result;

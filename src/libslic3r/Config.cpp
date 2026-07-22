@@ -1508,7 +1508,11 @@ ConfigSubstitutions ConfigBase::load_from_gcode_file(const std::string &file, Fo
         key_value_pairs = load_from_gcode_string_legacy(*this, data.data(), substitutions_ctxt);
     }
 
-    if (key_value_pairs < 80) {
+    if (key_value_pairs < 80
+        // BambuPlotter: the plotter preview G-code carries a deliberately
+        // minimal CONFIG_BLOCK (present only so the BambuStudio-producer
+        // parsing path accepts the file) - it is not a corrupt print file.
+        && file.find("plotter/preview.gcode") == std::string::npos) {
         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << format("Suspiciously low number of configuration values extracted from %1%: %2%", file, key_value_pairs);
         throw Slic3r::RuntimeError(format("Suspiciously low number of configuration values extracted from %1%: %2%", file, key_value_pairs));
     }

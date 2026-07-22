@@ -6548,6 +6548,10 @@ public:
 
     // BambuPlotter application state (profile + last generated plot).
     PlotterController           plotter;
+    // True while load_plotter_gcode_preview runs: the gcode renderer calls
+    // schedule_background_process() as a benign end-of-load poke, which the
+    // plotter staleness hook must not mistake for a model change.
+    bool                        plotter_injecting = false;
 
     std::string                 label_btn_export;
     std::string                 label_btn_send;
@@ -10671,6 +10675,9 @@ void Plater::priv::schedule_background_process()
 {
     delayed_error_message.clear();
     if (Plater::plotter_mode()) {
+        // Benign renderer poke during preview injection - not a model change.
+        if (plotter_injecting)
+            return;
         // BambuPlotter: 3D slicing never runs. Every call here means the
         // model or config changed, which makes the generated plot stale -
         // "Send plot" stays disabled until the user regenerates.
@@ -20228,9 +20235,25 @@ void Plater::generate_plot()
 
 void Plater::load_plotter_gcode_preview(const std::string &gcode_utf8)
 {
+    // The staleness hook must ignore the renderer's own schedule pokes for
+    // the whole injection (cleared on every exit path).
+    struct InjectingGuard
+    {
+        bool &flag;
+        explicit InjectingGuard(bool &f) : flag(f) { flag = true; }
+        ~InjectingGuard() { flag = false; }
+    } injecting_guard(p->plotter_injecting);
+
     // The plotter never arms this timer, but an already-queued poke must not
     // land after injection and mark the fresh result stale.
     p->background_process_timer.Stop();
+
+    // Bind the slice context and the Preview's result pointer to the current
+    // plate. The stock flow gets this as a side effect of plate switching /
+    // new_project (which load_gcode calls and we deliberately skip); without
+    // it the Preview reads a stale, empty result and silently shows nothing.
+    p->partplate_list.update_slice_context_to_current_plate(p->background_process);
+    p->preview->update_gcode_result(p->partplate_list.get_current_slice_result());
 
     // A real file: the sequential view's gcode window seeks it on disk.
     const fs::path dir = fs::path(data_dir()) / "plotter";

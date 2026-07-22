@@ -90,6 +90,14 @@ void PlotterCalibrationDialog::build_ui()
     m_btn_home->SetMinSize(wxSize(FromDIP(80), FromDIP(28)));
     style_primary_button(m_btn_home);
     home_sizer->Add(m_btn_home, 0, wxALIGN_CENTER_VERTICAL);
+    home_sizer->AddSpacer(FromDIP(8));
+    // Position was only lost app-side (wizard reopened): re-establish it
+    // with an absolute park move - no homing, pen may stay mounted.
+    m_btn_sync = new Button(this, _L("Sync position"));
+    m_btn_sync->SetMinSize(wxSize(FromDIP(110), FromDIP(28)));
+    m_btn_sync->SetToolTip(_L("Re-establish the position with a park move (no homing; the pen can stay mounted). Available while the printer still knows its origin."));
+    m_btn_sync->Bind(wxEVT_BUTTON, &PlotterCalibrationDialog::on_sync_position, this);
+    home_sizer->Add(m_btn_sync, 0, wxALIGN_CENTER_VERTICAL);
     home_sizer->AddSpacer(FromDIP(12));
     m_state_label = new wxStaticText(this, wxID_ANY, wxEmptyString);
     m_state_label->SetFont(Label::Body_13);
@@ -216,6 +224,9 @@ void PlotterCalibrationDialog::refresh_ui()
 
     const bool ready = m_controller.state() == PlotterCalibrationController::State::Ready;
     m_btn_home->Enable(m_controller.machine() != nullptr && !m_controller.pen_mounted());
+    m_btn_sync->Enable(m_controller.machine() != nullptr && !ready &&
+                       m_controller.state() == PlotterCalibrationController::State::NeedsHoming &&
+                       m_controller.machine_reports_homed());
     for (Button *btn : {m_btn_x_plus, m_btn_x_minus, m_btn_y_plus, m_btn_y_minus, m_btn_z_plus, m_btn_z_minus})
         btn->Enable(ready);
     for (int i = 0; i < 5; ++i)
@@ -246,6 +257,17 @@ void PlotterCalibrationDialog::on_home(wxCommandEvent &)
 {
     std::string err;
     if (!m_controller.home(&err)) {
+        set_status(err);
+        return;
+    }
+    set_status(std::string());
+    refresh_ui();
+}
+
+void PlotterCalibrationDialog::on_sync_position(wxCommandEvent &)
+{
+    std::string err;
+    if (!m_controller.sync_position(&err)) {
         set_status(err);
         return;
     }

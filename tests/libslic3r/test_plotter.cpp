@@ -286,6 +286,10 @@ TEST_CASE("Plotter: G-code generator emits movement-only output", "[Plotter]")
     // its own and never cools down unless commanded).
     CHECK(contains_line(result.gcode, "M104 S0"));
     CHECK(contains_line(result.gcode, "M140 S0"));
+    // Presentation: pen high (pen_up 10 + 60), bed slid to max Y so the
+    // sheet faces the user.
+    CHECK(contains_line(result.gcode, "G1 Z70 F4800"));
+    CHECK(contains_line(result.gcode, "G1 Y140 F4800"));
 
     // The generated file must pass the strict validator.
     const ValidationResult validation = PlotterSafetyValidator::validate(result.gcode, profile);
@@ -385,7 +389,9 @@ TEST_CASE("Plotter: validator rejects every prohibited category", "[Plotter]")
     rejects("G1 X10 Y30 F1800", "X target outside");
     rejects("G1 X30 Y200 F1800", "Y target outside");
     rejects("G1 Z1.0 F600", "below the calibrated safe pen-down");
-    rejects("G1 Z50 F600", "above the calibrated pen-up");
+    // Z up to present_z (pen_up 10 + 60 = 70) is allowed for the end-of-job
+    // presentation move; anything above stays rejected.
+    rejects("G1 Z90 F600", "above the presentation height");
     // Unknown commands stay denied.
     rejects("M42 P1 S255", "not on the plotter allowlist");
     rejects("M106 S255", "fan");

@@ -80,6 +80,12 @@ struct PlotterToolProfile
     BoundingBoxf machine_rect() const
         { return BoundingBoxf(Vec2d(min_x, min_y), Vec2d(max_x, max_y)); }
 
+    // End-of-job presentation height: the pen rises here (upward-only, so
+    // always safe) before the bed slides to max Y to hand the sheet to the
+    // user. Deterministic from the profile so the generator and the
+    // validator agree on the allowed ceiling.
+    double present_z() const { return std::min(pen_up_z + 60., 120.); }
+
     // The same rectangle expressed as PEN positions on the bed (for drawing
     // the calibrated plotting area on the build plate).
     BoundingBoxf pen_rect_on_bed() const
