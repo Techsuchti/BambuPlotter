@@ -691,6 +691,7 @@ private:
     GLModel                               m_gridlines;
     GLModel                               m_gridlines_bolder;
     GLModel                               m_plot_rect;
+    GLModel                               m_plot_paper; // filled white sheet under the ink
     bool                                  m_plot_rect_visible{false};
     GLModel                               m_del_icon;
     GLModel                               m_arrange_icon;

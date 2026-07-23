@@ -174,8 +174,34 @@ void PlotterCalibrationDialog::build_ui()
     }
     main_sizer->Add(capture_grid, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, FromDIP(15));
 
-    // --- step 5: finish -----------------------------------------------------
-    main_sizer->Add(make_section_title(this, _L("Step 5: Finish")), 0, wxLEFT | wxRIGHT | wxTOP, FromDIP(15));
+    // --- step 5: pen offset (optional) --------------------------------------
+    main_sizer->Add(make_section_title(this, _L("Step 5: Pen offset (optional)")), 0, wxLEFT | wxRIGHT | wxTOP, FromDIP(15));
+    auto *offset_help = new wxStaticText(this, wxID_ANY,
+        _L("Places artwork and the paper rectangle correctly on screen. Draw a small mark on the paper, "
+           "jog the PEN TIP exactly over it and capture; then jog the NOZZLE over the same mark and capture. "
+           "Skipping keeps the stored offset."));
+    offset_help->SetFont(Label::Body_13);
+    offset_help->Wrap(FromDIP(420));
+    main_sizer->Add(offset_help, 0, wxLEFT | wxRIGHT | wxTOP, FromDIP(15));
+
+    auto *offset_sizer = new wxBoxSizer(wxHORIZONTAL);
+    m_btn_offset_pen = new Button(this, _L("Capture pen on mark"));
+    m_btn_offset_pen->SetMinSize(wxSize(FromDIP(170), FromDIP(28)));
+    m_btn_offset_pen->Bind(wxEVT_BUTTON, &PlotterCalibrationDialog::on_capture_offset_pen, this);
+    offset_sizer->Add(m_btn_offset_pen, 0, wxALIGN_CENTER_VERTICAL);
+    offset_sizer->AddSpacer(FromDIP(8));
+    m_btn_offset_nozzle = new Button(this, _L("Capture nozzle on mark"));
+    m_btn_offset_nozzle->SetMinSize(wxSize(FromDIP(170), FromDIP(28)));
+    m_btn_offset_nozzle->Bind(wxEVT_BUTTON, &PlotterCalibrationDialog::on_capture_offset_nozzle, this);
+    offset_sizer->Add(m_btn_offset_nozzle, 0, wxALIGN_CENTER_VERTICAL);
+    offset_sizer->AddSpacer(FromDIP(12));
+    m_offset_value = new wxStaticText(this, wxID_ANY, wxT("-"));
+    m_offset_value->SetFont(Label::Body_13);
+    offset_sizer->Add(m_offset_value, 1, wxALIGN_CENTER_VERTICAL);
+    main_sizer->Add(offset_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, FromDIP(15));
+
+    // --- step 6: finish -----------------------------------------------------
+    main_sizer->Add(make_section_title(this, _L("Step 6: Finish")), 0, wxLEFT | wxRIGHT | wxTOP, FromDIP(15));
     m_btn_finish = new Button(this, _L("Finish"));
     m_btn_finish->SetMinSize(wxSize(FromDIP(80), FromDIP(28)));
     style_primary_button(m_btn_finish);
@@ -232,6 +258,16 @@ void PlotterCalibrationDialog::refresh_ui()
     for (int i = 0; i < 5; ++i)
         m_btn_capture[i]->Enable(ready);
 
+    m_btn_offset_pen->Enable(ready);
+    m_btn_offset_nozzle->Enable(ready);
+    {
+        const Vec2d &off = m_controller.profile().pen_offset;
+        wxString label = wxString::Format(wxT("(%.2f, %.2f)"), off.x(), off.y());
+        if (m_controller.pen_mark_captured() != m_controller.nozzle_mark_captured())
+            label += m_controller.pen_mark_captured() ? _L(" - now capture the nozzle") : _L(" - now capture the pen");
+        m_offset_value->SetLabelText(label);
+    }
+
     const auto &profile = m_controller.profile();
     m_capture_value[CAPTURE_PAPER_ORIGIN]->SetLabelText(
         wxString::Format(wxT("(%.2f, %.2f)"), profile.paper_origin.x(), profile.paper_origin.y()));
@@ -268,6 +304,28 @@ void PlotterCalibrationDialog::on_sync_position(wxCommandEvent &)
 {
     std::string err;
     if (!m_controller.sync_position(&err)) {
+        set_status(err);
+        return;
+    }
+    set_status(std::string());
+    refresh_ui();
+}
+
+void PlotterCalibrationDialog::on_capture_offset_pen(wxCommandEvent &)
+{
+    std::string err;
+    if (!m_controller.capture_pen_over_mark(&err)) {
+        set_status(err);
+        return;
+    }
+    set_status(std::string());
+    refresh_ui();
+}
+
+void PlotterCalibrationDialog::on_capture_offset_nozzle(wxCommandEvent &)
+{
+    std::string err;
+    if (!m_controller.capture_nozzle_over_mark(&err)) {
         set_status(err);
         return;
     }

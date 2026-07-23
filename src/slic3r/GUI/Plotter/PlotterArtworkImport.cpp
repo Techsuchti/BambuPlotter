@@ -147,6 +147,9 @@ PlotPaths collect_artwork_paper_paths(const Model &model,
                 hatch_params.pattern   = profile.hatch_pattern == 1 ? HatchPattern::Concentric : HatchPattern::Lines;
                 hatch_params.spacing   = profile.hatch_spacing();
                 hatch_params.angle_deg = profile.hatch_angle;
+                // Keep hatch strokes clear of the outline so pen width never
+                // bleeds past the boundary into thin white details.
+                hatch_params.inset     = 0.5 * profile.pen_tip_width;
                 PlotPaths hatch = hatch_fill_regions(imported.fill_regions, hatch_params);
                 doc.insert(doc.end(), std::make_move_iterator(hatch.begin()),
                            std::make_move_iterator(hatch.end()));
@@ -205,6 +208,19 @@ bool save_plotter_project(Plater &plater, const std::string &path, std::string *
             *error = "there is no artwork on the plate - nothing to save";
         return false;
     }
+
+    // Plot intent travels with the project (calibration never does).
+    const PlotterToolProfile &profile = plater.plotter_controller()->profile();
+    project.has_settings                  = true;
+    project.settings.pen_tip_width        = profile.pen_tip_width;
+    project.settings.travel_speed         = profile.travel_speed;
+    project.settings.draw_speed           = profile.draw_speed;
+    project.settings.lift_speed           = profile.lift_speed;
+    project.settings.fill_enabled         = profile.fill_enabled;
+    project.settings.hatch_pattern        = profile.hatch_pattern;
+    project.settings.hatch_spacing_factor = profile.hatch_spacing_factor;
+    project.settings.hatch_angle          = profile.hatch_angle;
+
     return project.save(path, error);
 }
 
@@ -260,6 +276,25 @@ bool open_plotter_project(Plater &plater, const std::string &path)
     if (restored == 0) {
         show_import_error(_L("No artwork could be restored from the plot project."));
         return false;
+    }
+
+    // Apply the project's plot intent to the machine profile - pen/fill
+    // fields only, never the calibration.
+    if (project.has_settings) {
+        PlotterToolProfile current;
+        current.load(PlotterCalibrationController::profile_path(), nullptr);
+        current.pen_tip_width        = project.settings.pen_tip_width;
+        current.travel_speed         = project.settings.travel_speed;
+        current.draw_speed           = project.settings.draw_speed;
+        current.lift_speed           = project.settings.lift_speed;
+        current.fill_enabled         = project.settings.fill_enabled;
+        current.hatch_pattern        = project.settings.hatch_pattern;
+        current.hatch_spacing_factor = project.settings.hatch_spacing_factor;
+        current.hatch_angle          = project.settings.hatch_angle;
+        std::string save_error;
+        current.save(PlotterCalibrationController::profile_path(), &save_error);
+        plater.plotter_controller()->reload_profile();
+        plater.sidebar().refresh_plotter_config();
     }
 
     plater.plotter_controller()->set_project_path(path);

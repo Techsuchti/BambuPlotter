@@ -47,6 +47,8 @@ private:
     void   on_timer(wxTimerEvent &event);
     void   on_home(wxCommandEvent &event);
     void   on_sync_position(wxCommandEvent &event);
+    void   on_capture_offset_pen(wxCommandEvent &event);
+    void   on_capture_offset_nozzle(wxCommandEvent &event);
     void   on_jog(char axis, double sign);
     void   on_pen_mounted(wxCommandEvent &event);
     void   on_capture(int which);
@@ -59,6 +61,10 @@ private:
     wxStaticText *m_state_label{nullptr};
     Button       *m_btn_home{nullptr};
     Button       *m_btn_sync{nullptr};
+    // step 5: pen offset
+    Button       *m_btn_offset_pen{nullptr};
+    Button       *m_btn_offset_nozzle{nullptr};
+    wxStaticText *m_offset_value{nullptr};
     // step 2
     wxRadioBox   *m_increment_radio{nullptr};
     wxStaticText *m_position_label{nullptr};

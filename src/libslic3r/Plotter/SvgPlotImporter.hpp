@@ -30,10 +30,14 @@ struct SvgImportOptions
 // A filled area of the document: its closed contours plus the SVG fill rule
 // that decides which enclosed contours are holes (letters, eyes, ...).
 // Contours are doc space (mm, Y up), always treated as closed.
+// Regions are listed in DOCUMENT ORDER (SVG painter's algorithm): a light
+// (paper-colored) fill painted over dark ink means "no ink here", so it
+// erases instead of adding.
 struct SvgFillRegion
 {
     PlotPaths contours;
     bool      even_odd = false; // SVG fill-rule: evenodd vs nonzero
+    bool      erases   = false; // light fill: subtract from ink laid below
 };
 
 struct SvgImportResult

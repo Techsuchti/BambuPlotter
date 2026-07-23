@@ -161,6 +161,10 @@ public:
     Sidebar &operator=(const Sidebar &) = delete;
     ~Sidebar();
 
+    // BambuPlotter: re-read the profile into the sidebar's plotter
+    // configuration panel (after project open / external profile change).
+    void refresh_plotter_config();
+
     void on_enter_image_printer_bed(wxMouseEvent &evt);
     void on_leave_image_printer_bed(wxMouseEvent &evt);
     void on_change_color_mode(bool is_dark);

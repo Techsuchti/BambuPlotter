@@ -17,6 +17,10 @@ struct HatchParams
     double       spacing    = 0.45; // mm between strokes (pen tip x overlap factor)
     double       angle_deg  = 45.;  // Lines pattern only
     double       min_length = 0.05; // drop shorter hatch fragments (mm)
+    // Shrink the hatched area by this much (mm) so strokes - which are pen
+    // lines with real width - never bleed past the region boundary and eat
+    // thin white details. Set to half the pen tip width.
+    double       inset      = 0.;
 };
 
 // Turns the filled areas of an imported SVG into interior pen strokes.

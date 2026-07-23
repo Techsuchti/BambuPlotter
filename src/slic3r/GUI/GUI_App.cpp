@@ -4542,6 +4542,18 @@ void GUI_App::load_project(wxWindow *parent, wxString& input_file) const
 void GUI_App::import_model(wxWindow *parent, wxArrayString& input_files) const
 {
     input_files.Clear();
+
+    // BambuPlotter: the importer brings in SVG artwork only.
+    if (Plater::plotter_mode()) {
+        wxFileDialog dialog(parent ? parent : GetTopWindow(),
+            _L("Choose one or more SVG files:"),
+            from_u8(app_config->get_last_dir()), "",
+            "SVG files (*.svg)|*.svg", wxFD_OPEN | wxFD_MULTIPLE | wxFD_FILE_MUST_EXIST);
+        if (dialog.ShowModal() == wxID_OK)
+            dialog.GetPaths(input_files);
+        return;
+    }
+
     wxFileDialog dialog(parent ? parent : GetTopWindow(),
 #ifdef __APPLE__
         _L("Choose one or more files (3mf/step/stl/svg/obj/amf/gltf/glb/fbx/usd*/abc/ply):"),

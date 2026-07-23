@@ -50,6 +50,18 @@ std::string PlotterProject::serialize_json() const
         };
         j["artworks"].push_back(std::move(ja));
     }
+    if (has_settings) {
+        j["settings"] = {
+            {"pen_tip_width", settings.pen_tip_width},
+            {"travel_speed", settings.travel_speed},
+            {"draw_speed", settings.draw_speed},
+            {"lift_speed", settings.lift_speed},
+            {"fill_enabled", settings.fill_enabled},
+            {"hatch_pattern", settings.hatch_pattern},
+            {"hatch_spacing_factor", settings.hatch_spacing_factor},
+            {"hatch_angle", settings.hatch_angle},
+        };
+    }
     return j.dump(4);
 }
 
@@ -89,6 +101,18 @@ bool PlotterProject::deserialize_json(const std::string &json_text, std::string 
                 a.placement.scale      = pl.value("scale", 1.);
             }
             p.artworks.emplace_back(std::move(a));
+        }
+        if (j.contains("settings")) {
+            const auto &s = j["settings"];
+            p.has_settings                  = true;
+            p.settings.pen_tip_width        = s.value("pen_tip_width", 0.5);
+            p.settings.travel_speed         = s.value("travel_speed", 80.);
+            p.settings.draw_speed           = s.value("draw_speed", 30.);
+            p.settings.lift_speed           = s.value("lift_speed", 10.);
+            p.settings.fill_enabled         = s.value("fill_enabled", true);
+            p.settings.hatch_pattern        = s.value("hatch_pattern", 0);
+            p.settings.hatch_spacing_factor = s.value("hatch_spacing_factor", 0.9);
+            p.settings.hatch_angle          = s.value("hatch_angle", 45.);
         }
         *this = std::move(p);
         return true;

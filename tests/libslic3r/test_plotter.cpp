@@ -556,11 +556,22 @@ TEST_CASE("Plotter: project v2 round-trip and placement math", "[Plotter]")
     REQUIRE(placed.size() == 1);
     CHECK((placed.front().points.front() - Vec2d(70., 70.)).norm() < 1e-3);
 
+    p.has_settings                  = true;
+    p.settings.pen_tip_width        = 0.7;
+    p.settings.draw_speed           = 55.;
+    p.settings.fill_enabled         = false;
+    p.settings.hatch_spacing_factor = 1.4;
+
     // JSON round-trip preserves everything.
     PlotterProject q;
     std::string err;
     REQUIRE(q.deserialize_json(p.serialize_json(), &err));
     CHECK(err.empty());
+    REQUIRE(q.has_settings);
+    CHECK(q.settings.pen_tip_width == Approx(0.7));
+    CHECK(q.settings.draw_speed == Approx(55.));
+    CHECK_FALSE(q.settings.fill_enabled);
+    CHECK(q.settings.hatch_spacing_factor == Approx(1.4));
     REQUIRE(q.artworks.size() == 1);
     const ProjectArtwork &b = q.artworks.front();
     CHECK(b.name == "corner");
@@ -673,9 +684,48 @@ TEST_CASE("Plotter: SVG import reports fill regions", "[Plotter]")
     REQUIRE(r.fill_regions.size() == 1);
     const SvgFillRegion &region = r.fill_regions.front();
     CHECK(region.even_odd);
+    CHECK_FALSE(region.erases);
     REQUIRE(region.contours.size() == 2);
     for (const PlotPath &c : region.contours)
         CHECK(c.closed);
+
+    // White fills are paper, not ink: they erase (painter's algorithm).
+    const std::string layered = R"(<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
+        <path d="M10,10 L50,10 L50,50 L10,50 Z"/>
+        <path fill="#fff" d="M25,25 L35,25 L35,35 L25,35 Z"/>
+    </svg>)";
+    const SvgImportResult l = SvgPlotImporter::import_memory(layered);
+    REQUIRE(l.ok);
+    REQUIRE(l.fill_regions.size() == 2);
+    CHECK_FALSE(l.fill_regions[0].erases); // no fill attribute = black
+    CHECK(l.fill_regions[1].erases);       // #fff = paper
+}
+
+TEST_CASE("Plotter: white shapes erase ink under painter's order", "[Plotter]")
+{
+    // Black 20x20 square, then a white 8x8 square painted on top of it.
+    SvgFillRegion black_sq, white_sq;
+    PlotPath outer, inner;
+    outer.closed = inner.closed = true;
+    outer.points = {Vec2d(0., 0.), Vec2d(20., 0.), Vec2d(20., 20.), Vec2d(0., 20.)};
+    inner.points = {Vec2d(6., 6.), Vec2d(14., 6.), Vec2d(14., 14.), Vec2d(6., 14.)};
+    black_sq.contours = {outer};
+    white_sq.contours = {inner};
+    white_sq.erases   = true;
+
+    HatchParams params;
+    params.pattern   = HatchPattern::Lines;
+    params.spacing   = 1.0;
+    params.angle_deg = 0.;
+
+    const PlotPaths hatch = hatch_fill_regions({black_sq, white_sq}, params);
+    REQUIRE(!hatch.empty());
+    for (const PlotPath &p : hatch)
+        for (size_t i = 1; i < p.points.size(); ++i) {
+            const Vec2d mid = (p.points[i - 1] + p.points[i]) * 0.5;
+            const bool inside_white = mid.x() > 6.3 && mid.x() < 13.7 && mid.y() > 6.3 && mid.y() < 13.7;
+            CHECK_FALSE(inside_white);
+        }
 }
 
 TEST_CASE("Plotter: line hatching fills areas and respects holes", "[Plotter]")
@@ -722,6 +772,46 @@ TEST_CASE("Plotter: line hatching fills areas and respects holes", "[Plotter]")
     // of hatch lines plus short serpentine connectors.
     CHECK(total > 250.);
     CHECK(total < 450.);
+}
+
+TEST_CASE("Plotter: hatching hole rules - mixed and uniform winding", "[Plotter]")
+{
+    HatchParams params;
+    params.pattern   = HatchPattern::Lines;
+    params.spacing   = 1.0;
+    params.angle_deg = 0.;
+
+    auto segments_in_hole = [](const PlotPaths &hatch) {
+        size_t n = 0;
+        for (const PlotPath &p : hatch)
+            for (size_t i = 1; i < p.points.size(); ++i) {
+                const Vec2d mid = (p.points[i - 1] + p.points[i]) * 0.5;
+                if (mid.x() > 6.3 && mid.x() < 13.7 && mid.y() > 6.3 && mid.y() < 13.7)
+                    ++n;
+            }
+        return n;
+    };
+
+    // True nonzero encoding: outer CCW, inner CW -> hole honored.
+    SvgFillRegion mixed;
+    mixed.even_odd = false;
+    PlotPath outer, inner;
+    outer.closed = inner.closed = true;
+    outer.points = {Vec2d(0., 0.), Vec2d(20., 0.), Vec2d(20., 20.), Vec2d(0., 20.)};   // CCW
+    inner.points = {Vec2d(6., 6.), Vec2d(6., 14.), Vec2d(14., 14.), Vec2d(14., 6.)};   // CW
+    mixed.contours = {outer, inner};
+    CHECK(segments_in_hole(hatch_fill_regions({mixed}, params)) == 0);
+
+    // Auto-vectorizer case (the wolf regression): ALL contours share one
+    // winding, nonzero rule - winding carries no hole information, so
+    // nesting must alternate (even-odd) instead of filling the silhouette.
+    SvgFillRegion uniform;
+    uniform.even_odd = false;
+    PlotPath inner_ccw;
+    inner_ccw.closed = true;
+    inner_ccw.points = {Vec2d(6., 6.), Vec2d(14., 6.), Vec2d(14., 14.), Vec2d(6., 14.)}; // CCW like outer
+    uniform.contours = {outer, inner_ccw};
+    CHECK(segments_in_hole(hatch_fill_regions({uniform}, params)) == 0);
 }
 
 TEST_CASE("Plotter: concentric hatching emits closed shrinking rings", "[Plotter]")

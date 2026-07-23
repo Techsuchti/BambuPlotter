@@ -16,11 +16,18 @@ namespace Slic3r { namespace Plotter {
 
 namespace {
 
-// Assemble one region's contours into polygons-with-holes under its SVG
-// fill rule (this is what turns letters and eyes into holes).
+// Assemble one region's contours into polygons-with-holes. Fill-rule
+// selection per region:
+//  - declared evenodd                       -> even-odd nesting
+//  - nonzero with MIXED winding directions  -> true nonzero (winding is
+//    meaningful hole encoding)
+//  - nonzero with UNIFORM winding           -> even-odd nesting (uniform
+//    winding cannot express holes under nonzero; nesting alternation
+//    preserves what the author saw).
 ExPolygons region_to_expolygons(const SvgFillRegion &region)
 {
     Polygons polys;
+    int ccw = 0, cw = 0;
     for (const PlotPath &contour : region.contours) {
         if (contour.points.size() < 3)
             continue;
@@ -28,9 +35,26 @@ ExPolygons region_to_expolygons(const SvgFillRegion &region)
         pg.points.reserve(contour.points.size());
         for (const Vec2d &pt : contour.points)
             pg.points.emplace_back(Point::new_scale(pt));
+        (pg.is_counter_clockwise() ? ccw : cw)++;
         polys.emplace_back(std::move(pg));
     }
-    return union_ex(polys, region.even_odd ? ClipperLib::pftEvenOdd : ClipperLib::pftNonZero);
+    const bool even_odd = region.even_odd || ccw == 0 || cw == 0;
+    return union_ex(polys, even_odd ? ClipperLib::pftEvenOdd : ClipperLib::pftNonZero);
+}
+
+// Compose regions in document order (SVG painter's algorithm): dark fills
+// add ink, light fills take it away - that is how auto-vectorizers carve
+// white details out of black shapes.
+ExPolygons compose_ink(const std::vector<SvgFillRegion> &regions)
+{
+    ExPolygons ink;
+    for (const SvgFillRegion &region : regions) {
+        ExPolygons r = region_to_expolygons(region);
+        if (r.empty())
+            continue;
+        ink = region.erases ? diff_ex(ink, r) : union_ex(ink, r);
+    }
+    return ink;
 }
 
 void append_plot_path(PlotPaths &out, std::vector<Vec2d> &&pts, bool closed, double min_length)
@@ -103,13 +127,17 @@ void hatch_lines(const ExPolygons &areas, const HatchParams &params, PlotPaths &
         // the exact segment test, or (for chords lying on straight walls)
         // sampled points, borders counting as inside.
         auto connector_ok = [&](const Vec2d &from, const Vec2d &to) -> bool {
-            if ((to - from).norm() > max_connector)
+            const double len = (to - from).norm();
+            if (len > max_connector)
                 return false;
             const Point pf = Point::new_scale(from), pt = Point::new_scale(to);
             if (ex.contains(Line(pf, pt)))
                 return true;
-            for (double t : {0.25, 0.5, 0.75})
-                if (!ex.contains(Point::new_scale(Vec2d(from + (to - from) * t))))
+            // Fallback for chords hugging straight walls: sample densely so
+            // the connector cannot slip across hair-thin white details.
+            const int steps = std::max(3, int(std::ceil(len / 0.25)));
+            for (int i = 1; i < steps; ++i)
+                if (!ex.contains(Point::new_scale(Vec2d(from + (to - from) * (double(i) / steps)))))
                     return false;
             return true;
         };
@@ -204,11 +232,10 @@ PlotPaths hatch_fill_regions(const std::vector<SvgFillRegion> &regions, const Ha
     if (regions.empty() || params.spacing < 0.01)
         return out;
 
-    // Merge all regions so overlapping shapes are hatched exactly once.
-    ExPolygons merged;
-    for (const SvgFillRegion &region : regions)
-        append(merged, region_to_expolygons(region));
-    merged = union_ex(merged);
+    // Painter's-order composition, then shrink by the pen half-width.
+    ExPolygons merged = compose_ink(regions);
+    if (params.inset > 0.005)
+        merged = offset_ex(merged, -float(scale_(params.inset)));
     if (merged.empty())
         return out;
 

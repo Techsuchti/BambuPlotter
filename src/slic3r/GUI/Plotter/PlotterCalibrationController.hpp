@@ -88,6 +88,14 @@ public:
     // lost. Requires machine_reports_homed().
     bool sync_position(std::string *error = nullptr);
 
+    // Pen-offset measurement (two-point method): capture the commanded XY
+    // with the PEN TIP over a mark, then with the NOZZLE over the same
+    // mark; pen_offset = nozzle - pen. Skipping keeps the stored value.
+    bool capture_pen_over_mark(std::string *error = nullptr);
+    bool capture_nozzle_over_mark(std::string *error = nullptr);
+    bool pen_mark_captured() const { return m_pen_mark_set; }
+    bool nozzle_mark_captured() const { return m_nozzle_mark_set; }
+
     // --- verified-safe motions ----------------------------------------------
     // All return false with `error` set when refused.
     bool home(std::string *error = nullptr);
@@ -131,6 +139,10 @@ private:
     // trusted until they were seen dropping (or a timeout passes).
     bool               m_seen_unhomed = false;
     int                m_homing_ticks = 0;
+    Vec2d              m_mark_pen{0., 0.};
+    Vec2d              m_mark_nozzle{0., 0.};
+    bool               m_pen_mark_set    = false;
+    bool               m_nozzle_mark_set = false;
 };
 
 } // namespace GUI

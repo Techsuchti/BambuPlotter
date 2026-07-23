@@ -4264,6 +4264,7 @@ void PartPlateList::calc_gridlines(const ExPolygon &poly, const BoundingBox &pp_
 void PartPlateList::set_plot_rectangle(const BoundingBoxf &rect_mm, bool visible)
 {
     m_plot_rect.reset();
+    m_plot_paper.reset();
     m_plot_rect_visible = visible && rect_mm.defined
         && rect_mm.size().x() > 0. && rect_mm.size().y() > 0.;
     if (!m_plot_rect_visible)
@@ -4279,8 +4280,15 @@ void PartPlateList::set_plot_rectangle(const BoundingBoxf &rect_mm, bool visible
     rect_contour.append(Point(p_min.x(), p_max.y()));
     rect_contour.append(p_min);
 
+    // The paper itself: a filled white sheet just above the plate surface,
+    // so ink strokes (drawn at higher Z) read as ink-on-paper.
+    ExPolygon paper_poly(Polygon{p_min, Point(p_max.x(), p_min.y()), p_max, Point(p_min.x(), p_max.y())});
+    auto paper_triangles = triangulate_expolygon_2f(paper_poly, NORMALS_UP);
+    if (!m_plot_paper.init_model_from_poly(paper_triangles, GROUND_Z + 0.04f))
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": Unable to create plot paper sheet\n";
+
     Lines rect_lines = to_lines(rect_contour);
-    if (!m_plot_rect.init_model_from_lines(rect_lines, GROUND_Z)) {
+    if (!m_plot_rect.init_model_from_lines(rect_lines, GROUND_Z + 0.08f)) {
         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": Unable to create plot rectangle lines\n";
         m_plot_rect_visible = false;
     }
@@ -6271,6 +6279,14 @@ void PartPlateList::render_plot_rectangle()
     if (!m_plot_rect_visible || !m_plot_rect.is_initialized())
         return;
     const auto &p_ogl_manager = wxGetApp().get_opengl_manager();
+
+    // Paper sheet first (warm white), then the boundary line above it.
+    if (m_plot_paper.is_initialized()) {
+        const ColorRGBA paper_color{0.94f, 0.925f, 0.89f, 1.0f};
+        m_plot_paper.set_color(paper_color);
+        m_plot_paper.render_geometry();
+    }
+
     p_ogl_manager->set_line_width(2.0f * m_scale_factor);
     // slate accent
     const ColorRGBA plot_rect_color{0.43f, 0.55f, 0.63f, 1.0f};

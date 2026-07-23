@@ -3196,6 +3196,12 @@ Sidebar::Sidebar(Plater *parent)
     //});
 }
 
+void Sidebar::refresh_plotter_config()
+{
+    if (p->plotter_config_panel != nullptr)
+        p->plotter_config_panel->refresh();
+}
+
 Sidebar::~Sidebar() {
     if (m_extruder_warning_dialog) {
         m_extruder_warning_dialog->Hide();
@@ -24062,11 +24068,10 @@ void Plater::on_activate()
 // Get vector of extruder colors considering filament color, if extruder color is undefined.
 std::vector<std::string> Plater::get_extruder_colors_from_plater_config(const GCodeProcessorResult* const result) const
 {
-    // BambuPlotter: pen strokes preview as ink, not as filament plastic.
-    // Light tone: true black is invisible on the dark plate; the faithful
-    // ink-on-white-paper look needs a paper underlay (backlog).
+    // BambuPlotter: pen strokes preview as ink on the white paper sheet
+    // rendered at the calibrated rectangle.
     if (plotter_mode())
-        return { "#E9E7E2" };
+        return { "#26262A" };
     if (wxGetApp().is_gcode_viewer() && result != nullptr)
         return result->extruder_colors;
     else {

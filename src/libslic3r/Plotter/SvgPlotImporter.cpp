@@ -81,6 +81,15 @@ SvgImportResult import_image(const NSVGimage &image, const SvgImportOptions &opt
 
         SvgFillRegion region;
         region.even_odd = shape->fillRule == NSVG_FILLRULE_EVENODD;
+        // Light fills are paper, not ink (auto-vectorizers stack white
+        // shapes over black to carve out details - painter's algorithm).
+        if (has_fill && shape->fill.type == NSVG_PAINT_COLOR) {
+            const unsigned int c = shape->fill.color; // NSVG_RGB: r | g<<8 | b<<16
+            const double luminance = 0.299 * double(c & 0xFF)
+                                   + 0.587 * double((c >> 8) & 0xFF)
+                                   + 0.114 * double((c >> 16) & 0xFF);
+            region.erases = luminance >= 160.;
+        }
 
         for (const NSVGpath *path = shape->paths; path != nullptr; path = path->next) {
             // Outline of every painted shape is drawn (a fill without its

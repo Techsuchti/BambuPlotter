@@ -278,6 +278,28 @@ bool PlotterCalibrationController::capture_pen_up(std::string *error)
     return true;
 }
 
+bool PlotterCalibrationController::capture_pen_over_mark(std::string *error)
+{
+    if (!ensure_ready(error))
+        return false;
+    m_mark_pen     = Vec2d(m_position.x(), m_position.y());
+    m_pen_mark_set = true;
+    if (m_nozzle_mark_set)
+        m_profile.pen_offset = m_mark_nozzle - m_mark_pen;
+    return true;
+}
+
+bool PlotterCalibrationController::capture_nozzle_over_mark(std::string *error)
+{
+    if (!ensure_ready(error))
+        return false;
+    m_mark_nozzle     = Vec2d(m_position.x(), m_position.y());
+    m_nozzle_mark_set = true;
+    if (m_pen_mark_set)
+        m_profile.pen_offset = m_mark_nozzle - m_mark_pen;
+    return true;
+}
+
 bool PlotterCalibrationController::finalize(std::string *error)
 {
     m_profile.calibrated = true;
