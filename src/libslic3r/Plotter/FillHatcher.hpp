@@ -21,15 +21,27 @@ struct HatchParams
     // lines with real width - never bleed past the region boundary and eat
     // thin white details. Set to half the pen tip width.
     double       inset      = 0.;
+    // plot_fill_regions only: pen tip diameter (mm) and whether ink parts
+    // thinner than ~1.2x the pen become single centerline strokes instead
+    // of two overlapping outline passes.
+    double       pen_width      = 0.5;
+    bool         centerline_thin = true;
 };
 
-// Turns the filled areas of an imported SVG into interior pen strokes.
-// Regions are merged first (overlapping shapes are hatched once), holes are
-// honored per the SVG fill rule. The regions' outline contours are NOT
-// emitted here - the importer already put them in SvgImportResult::paths.
+// Interior hatch strokes only (no outlines) for the composed ink of the
+// given regions. Painter's-order composition, holes honored per fill rule.
 // Output paths are doc space (mm, Y up), unordered (PathOptimizer's job).
 PlotPaths hatch_fill_regions(const std::vector<SvgFillRegion> &regions,
                              const HatchParams &params = {});
+
+// The COMPLETE pen plan for the filled areas of a document:
+//  - boundary outlines of the composed ink (thick parts),
+//  - interior hatch of the thick parts (inset by params.inset),
+//  - single medial-axis centerline strokes for parts thinner than
+//    ~1.2 x pen width (a pen cannot outline-and-fill those; two outline
+//    passes would just draw one fat, stiff line).
+PlotPaths plot_fill_regions(const std::vector<SvgFillRegion> &regions,
+                            const HatchParams &params = {});
 
 } } // namespace Slic3r::Plotter
 

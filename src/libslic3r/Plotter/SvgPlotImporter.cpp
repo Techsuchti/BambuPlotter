@@ -92,8 +92,6 @@ SvgImportResult import_image(const NSVGimage &image, const SvgImportOptions &opt
         }
 
         for (const NSVGpath *path = shape->paths; path != nullptr; path = path->next) {
-            // Outline of every painted shape is drawn (a fill without its
-            // contour looks ragged at the hatch edges).
             PlotPath outline = flatten_path(path, /*force_closed=*/!has_stroke && has_fill);
             if (outline.empty())
                 continue;
@@ -102,7 +100,11 @@ SvgImportResult import_image(const NSVGimage &image, const SvgImportOptions &opt
                 contour.closed   = true;
                 region.contours.emplace_back(std::move(contour));
             }
-            result.paths.emplace_back(std::move(outline));
+            // Stroke paint draws the path itself; fill outlines are derived
+            // later from the COMPOSED ink (plot_fill_regions), so thin fills
+            // can become single centerline strokes instead of double lines.
+            if (has_stroke)
+                result.paths.emplace_back(std::move(outline));
         }
 
         if (has_fill && !region.contours.empty())
@@ -110,7 +112,7 @@ SvgImportResult import_image(const NSVGimage &image, const SvgImportOptions &opt
     }
 
     result.ok = true;
-    if (result.paths.empty()) {
+    if (result.paths.empty() && result.fill_regions.empty()) {
         result.ok    = false;
         result.error = "the SVG contains no plottable path geometry";
     }

@@ -10,7 +10,7 @@ namespace Slic3r { namespace Plotter {
 struct SvgImportOptions
 {
     // Curve flattening tolerance (mm).
-    double curve_tolerance = 0.1;
+    double curve_tolerance = 0.05;
     // Legacy (fills are first-class now: every painted shape imports its
     // outline, filled shapes additionally report a SvgFillRegion). Kept for
     // serialization compatibility; no longer filters anything.
@@ -44,9 +44,10 @@ struct SvgImportResult
 {
     bool      ok = false;
     std::string error;
-    PlotPaths paths;          // paper space, mm, Y up, origin bottom-left
-    // Filled shapes, for interior hatching (their outline contours are ALSO
-    // in `paths`, so hatchers must only add interior strokes).
+    // Stroke-painted geometry (doc space, mm, Y up, origin bottom-left).
+    // Filled shapes are NOT here - they live in fill_regions, and their pen
+    // plan (outlines, hatch, centerlines) comes from plot_fill_regions().
+    PlotPaths paths;
     std::vector<SvgFillRegion> fill_regions;
     double    width  = 0.;    // SVG document size (mm)
     double    height = 0.;

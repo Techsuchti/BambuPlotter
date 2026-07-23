@@ -162,15 +162,20 @@ TEST_CASE("Plotter: SVG import preserves open paths", "[Plotter]")
     CHECK(closed_it->points.size() == 4);
 }
 
-TEST_CASE("Plotter: SVG import falls back to fill-only shapes", "[Plotter]")
+TEST_CASE("Plotter: SVG import accepts fill-only documents", "[Plotter]")
 {
     const std::string svg = R"(<svg xmlns="http://www.w3.org/2000/svg" width="50mm" height="50mm" viewBox="0 0 50 50">
         <rect x="10" y="10" width="20" height="20" fill="red"/>
     </svg>)";
     const SvgImportResult result = SvgPlotImporter::import_memory(svg);
     REQUIRE(result.ok);
-    REQUIRE(result.paths.size() == 1);
-    CHECK(result.paths.front().closed);
+    // Filled shapes live in fill_regions only; their pen plan (outline,
+    // hatch, centerlines) comes from plot_fill_regions.
+    CHECK(result.paths.empty());
+    REQUIRE(result.fill_regions.size() == 1);
+    REQUIRE(result.fill_regions.front().contours.size() == 1);
+    CHECK(result.fill_regions.front().contours.front().closed);
+    CHECK_FALSE(result.fill_regions.front().erases); // red is ink
 }
 
 TEST_CASE("Plotter: SVG import rejects empty documents", "[Plotter]")
@@ -679,8 +684,8 @@ TEST_CASE("Plotter: SVG import reports fill regions", "[Plotter]")
 
     const SvgImportResult r = SvgPlotImporter::import_memory(svg);
     REQUIRE(r.ok);
-    // Outlines: 2 fill contours + 1 stroked polyline.
-    CHECK(r.paths.size() == 3);
+    // paths carries only the stroked polyline; fill contours live in regions.
+    CHECK(r.paths.size() == 1);
     REQUIRE(r.fill_regions.size() == 1);
     const SvgFillRegion &region = r.fill_regions.front();
     CHECK(region.even_odd);
@@ -812,6 +817,49 @@ TEST_CASE("Plotter: hatching hole rules - mixed and uniform winding", "[Plotter]
     inner_ccw.points = {Vec2d(6., 6.), Vec2d(14., 6.), Vec2d(14., 14.), Vec2d(6., 14.)}; // CCW like outer
     uniform.contours = {outer, inner_ccw};
     CHECK(segments_in_hole(hatch_fill_regions({uniform}, params)) == 0);
+}
+
+TEST_CASE("Plotter: thin fills become single centerline strokes", "[Plotter]")
+{
+    // A 30 x 0.5 mm bar (thinner than a 0.8 mm pen) next to a 20 x 20 block.
+    SvgFillRegion bar, block;
+    PlotPath bar_c, block_c;
+    bar_c.closed = block_c.closed = true;
+    bar_c.points   = {Vec2d(0., 30.), Vec2d(30., 30.), Vec2d(30., 30.5), Vec2d(0., 30.5)};
+    block_c.points = {Vec2d(0., 0.), Vec2d(20., 0.), Vec2d(20., 20.), Vec2d(0., 20.)};
+    bar.contours   = {bar_c};
+    block.contours = {block_c};
+
+    HatchParams params;
+    params.pattern    = HatchPattern::Lines;
+    params.spacing    = 0.7;
+    params.angle_deg  = 45.;
+    params.inset      = 0.4;
+    params.pen_width  = 0.8;
+
+    const PlotPaths plan = plot_fill_regions({bar, block}, params);
+    REQUIRE(!plan.empty());
+
+    size_t closed_outlines = 0, strokes_in_bar = 0;
+    double bar_stroke_len = 0.;
+    for (const PlotPath &p : plan) {
+        const BoundingBoxf bb = get_extents({p});
+        const bool in_bar = bb.min.y() > 25.;
+        if (p.closed) {
+            ++closed_outlines;
+            // No outline may belong to the thin bar - it gets a centerline.
+            CHECK_FALSE(in_bar);
+        } else if (in_bar) {
+            ++strokes_in_bar;
+            bar_stroke_len += p.length();
+        }
+    }
+    // The block contributes exactly one closed outline (no holes).
+    CHECK(closed_outlines == 1);
+    // The bar is drawn as centerline stroke(s) roughly its full length.
+    CHECK(strokes_in_bar >= 1);
+    CHECK(bar_stroke_len > 24.);
+    CHECK(bar_stroke_len < 35.);
 }
 
 TEST_CASE("Plotter: concentric hatching emits closed shrinking rings", "[Plotter]")

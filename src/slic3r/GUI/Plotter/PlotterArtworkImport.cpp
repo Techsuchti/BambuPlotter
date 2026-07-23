@@ -62,15 +62,23 @@ bool import_svg_as_artwork(Plater &plater, const std::string &svg_path)
     info.svg_markup      = markup.str();
 
     const SvgImportResult imported = SvgPlotImporter::import_memory(info.svg_markup, info.options);
-    if (!imported.ok || imported.paths.empty()) {
-        show_import_error(_L("No plottable strokes found in the SVG:") + " " +
-                          from_u8(imported.ok ? std::string("empty document") : imported.error));
+    if (!imported.ok) {
+        show_import_error(_L("No plottable strokes found in the SVG:") + " " + from_u8(imported.error));
         return false;
     }
     info.doc_width  = imported.width;
     info.doc_height = imported.height;
 
-    const BoundingBoxf ink = get_extents(imported.paths);
+    // Display geometry: stroke paths plus the contours of filled shapes.
+    PlotPaths display = imported.paths;
+    for (const SvgFillRegion &region : imported.fill_regions)
+        display.insert(display.end(), region.contours.begin(), region.contours.end());
+    if (display.empty()) {
+        show_import_error(_L("No plottable strokes found in the SVG:") + " " + _L("empty document"));
+        return false;
+    }
+
+    const BoundingBoxf ink = get_extents(display);
     info.pivot = ink.center();
 
     // Paper rectangle in bed coordinates; before calibration fall back to
@@ -81,7 +89,7 @@ bool import_svg_as_artwork(Plater &plater, const std::string &svg_path)
     ArtworkMeshParams mesh_params;
     if (profile.pen_tip_width > 0.05)
         mesh_params.stroke_width = profile.pen_tip_width;
-    const TriangleMesh mesh(artwork_mesh(imported.paths, info.pivot, mesh_params));
+    const TriangleMesh mesh(artwork_mesh(display, info.pivot, mesh_params));
     if (mesh.empty()) {
         show_import_error(_L("The SVG produced no drawable geometry."));
         return false;
@@ -133,26 +141,31 @@ PlotPaths collect_artwork_paper_paths(const Model &model,
                 continue;
             std::string import_error;
             SvgImportResult imported = vol->plotter_artwork->import_result(&import_error);
-            PlotPaths doc = std::move(imported.paths);
+            PlotPaths doc = std::move(imported.paths); // stroke-painted shapes
+            if (!imported.fill_regions.empty()) {
+                if (profile.fill_enabled) {
+                    // Full fill plan: composed-ink outlines + hatch +
+                    // centerlines for thin parts.
+                    HatchParams hatch_params;
+                    hatch_params.pattern   = profile.hatch_pattern == 1 ? HatchPattern::Concentric : HatchPattern::Lines;
+                    hatch_params.spacing   = profile.hatch_spacing();
+                    hatch_params.angle_deg = profile.hatch_angle;
+                    hatch_params.inset     = 0.5 * profile.pen_tip_width;
+                    hatch_params.pen_width = profile.pen_tip_width;
+                    PlotPaths fill = plot_fill_regions(imported.fill_regions, hatch_params);
+                    doc.insert(doc.end(), std::make_move_iterator(fill.begin()),
+                               std::make_move_iterator(fill.end()));
+                } else {
+                    // Fill disabled: draw the raw contours as line art.
+                    for (const SvgFillRegion &region : imported.fill_regions)
+                        doc.insert(doc.end(), region.contours.begin(), region.contours.end());
+                }
+            }
             if (doc.empty()) {
                 if (error != nullptr)
                     *error = obj->name + ": " +
                              (import_error.empty() ? std::string("artwork has no strokes") : import_error);
                 return {};
-            }
-            // Solid SVG areas -> interior hatch strokes ("plot what the SVG
-            // says"); the outlines are already in `doc`.
-            if (profile.fill_enabled && !imported.fill_regions.empty()) {
-                HatchParams hatch_params;
-                hatch_params.pattern   = profile.hatch_pattern == 1 ? HatchPattern::Concentric : HatchPattern::Lines;
-                hatch_params.spacing   = profile.hatch_spacing();
-                hatch_params.angle_deg = profile.hatch_angle;
-                // Keep hatch strokes clear of the outline so pen width never
-                // bleeds past the boundary into thin white details.
-                hatch_params.inset     = 0.5 * profile.pen_tip_width;
-                PlotPaths hatch = hatch_fill_regions(imported.fill_regions, hatch_params);
-                doc.insert(doc.end(), std::make_move_iterator(hatch.begin()),
-                           std::make_move_iterator(hatch.end()));
             }
             const Vec2d pivot = vol->plotter_artwork->pivot;
             for (const ModelInstance *inst : obj->instances) {
@@ -258,7 +271,10 @@ bool open_plotter_project(Plater &plater, const std::string &path)
     size_t restored = 0;
     for (const ProjectArtwork &a : project.artworks) {
         std::string import_error;
-        const PlotPaths doc = a.info.import_paths(&import_error);
+        SvgImportResult imported = a.info.import_result(&import_error);
+        PlotPaths doc = std::move(imported.paths);
+        for (const SvgFillRegion &region : imported.fill_regions)
+            doc.insert(doc.end(), region.contours.begin(), region.contours.end());
         if (doc.empty()) {
             show_import_error(from_u8(a.name) + ": " +
                               _L("could not restore this artwork:") + " " + from_u8(import_error));

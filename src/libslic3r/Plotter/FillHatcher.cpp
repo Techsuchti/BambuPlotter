@@ -226,23 +226,94 @@ void hatch_concentric(const ExPolygons &areas, const HatchParams &params, PlotPa
 
 } // namespace
 
+namespace {
+
+void hatch_areas(const ExPolygons &areas, const HatchParams &params, PlotPaths &out)
+{
+    ExPolygons interior = areas;
+    if (params.inset > 0.005)
+        interior = offset_ex(interior, -float(scale_(params.inset)));
+    if (interior.empty())
+        return;
+    if (params.pattern == HatchPattern::Concentric)
+        hatch_concentric(interior, params, out);
+    else
+        hatch_lines(interior, params, out);
+}
+
+void append_expolygon_contours(const ExPolygons &areas, double min_length, PlotPaths &out)
+{
+    for (const ExPolygon &ex : areas) {
+        auto emit_ring = [&](const Polygon &ring) {
+            std::vector<Vec2d> pts;
+            pts.reserve(ring.points.size());
+            for (const Point &pt : ring.points)
+                pts.emplace_back(unscale(pt));
+            append_plot_path(out, std::move(pts), true, min_length);
+        };
+        emit_ring(ex.contour);
+        for (const Polygon &hole : ex.holes)
+            emit_ring(hole);
+    }
+}
+
+} // namespace
+
 PlotPaths hatch_fill_regions(const std::vector<SvgFillRegion> &regions, const HatchParams &params)
 {
     PlotPaths out;
     if (regions.empty() || params.spacing < 0.01)
         return out;
 
-    // Painter's-order composition, then shrink by the pen half-width.
-    ExPolygons merged = compose_ink(regions);
-    if (params.inset > 0.005)
-        merged = offset_ex(merged, -float(scale_(params.inset)));
-    if (merged.empty())
+    const ExPolygons merged = compose_ink(regions);
+    if (!merged.empty())
+        hatch_areas(merged, params, out);
+    return out;
+}
+
+PlotPaths plot_fill_regions(const std::vector<SvgFillRegion> &regions, const HatchParams &params)
+{
+    PlotPaths out;
+    if (regions.empty() || params.spacing < 0.01)
         return out;
 
-    if (params.pattern == HatchPattern::Concentric)
-        hatch_concentric(merged, params, out);
-    else
-        hatch_lines(merged, params, out);
+    const ExPolygons ink = compose_ink(regions);
+    if (ink.empty())
+        return out;
+
+    // Split off ink a pen cannot outline-and-fill: parts thinner than
+    // ~1.2x the tip. Morphological opening removes them; what remains is
+    // the "thick" ink that gets outline + hatch.
+    ExPolygons thick = ink;
+    ExPolygons thin;
+    if (params.centerline_thin) {
+        const float half_limit = float(scale_(0.5 * 1.2 * std::max(params.pen_width, 0.05)));
+        thick = offset2_ex(ink, -half_limit, half_limit);
+        // Opening can poke past reflex corners; stay within the true ink.
+        thick = intersection_ex(thick, ink);
+        // Small clearance so slivers at thick/thin junctions don't double.
+        thin = diff_ex(ink, offset_ex(thick, float(scale_(0.02))));
+    }
+
+    // Boundary outlines of the drawing (composed ink, not raw shapes).
+    append_expolygon_contours(thick, params.min_length, out);
+
+    // Interior coverage.
+    hatch_areas(thick, params, out);
+
+    // Thin parts: one stroke down the middle - the pen's own width renders
+    // the artist's tapering lines instead of two overlapping outlines.
+    for (const ExPolygon &ex : thin) {
+        Polylines centerlines;
+        ex.medial_axis(scale_(0.02), scale_(2.0 * 1.2 * std::max(params.pen_width, 0.05)), &centerlines);
+        for (const Polyline &pl : centerlines) {
+            std::vector<Vec2d> pts;
+            pts.reserve(pl.points.size());
+            for (const Point &pt : pl.points)
+                pts.emplace_back(unscale(pt));
+            append_plot_path(out, std::move(pts), false, params.min_length);
+        }
+    }
     return out;
 }
 
