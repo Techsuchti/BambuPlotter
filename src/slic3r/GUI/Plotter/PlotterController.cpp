@@ -1,9 +1,7 @@
 #include "PlotterController.hpp"
 
-#include "libslic3r/Model.hpp"
 #include "libslic3r/Plotter/PathOptimizer.hpp"
 
-#include "slic3r/GUI/Plotter/PlotterArtworkImport.hpp"
 #include "slic3r/GUI/Plotter/PlotterCalibrationController.hpp"
 
 namespace Slic3r { namespace GUI {
@@ -19,48 +17,32 @@ void PlotterController::reload_profile()
     invalidate_result();
 }
 
-PlotterController::GenerateOutput PlotterController::generate(const Model &model)
+PlotterController::GenerateOutput PlotterController::run_generate(GenerateJob &&job)
 {
     GenerateOutput out;
-    invalidate_result();
 
-    if (!m_profile.is_valid()) {
-        out.error = "the plotter is not calibrated yet - run the calibration first (" +
-                    m_profile.invalid_reason() + ")";
-        return out;
-    }
-
-    std::string collect_error;
-    PlotPaths paths = collect_artwork_paper_paths(model, m_profile, &collect_error);
-    if (paths.empty()) {
-        out.error = collect_error.empty() ? std::string("nothing to plot") : collect_error;
-        return out;
-    }
-
-    paths = PathOptimizer::optimize(std::move(paths), Vec2d(0., 0.));
+    PlotPaths paths = PathOptimizer::optimize(std::move(job.paths), Vec2d(0., 0.));
 
     // The sendable job is the gatekeeper: it bounds-checks every coordinate
     // and refuses out-of-area artwork before any preview is shown.
-    const GCodeGenResult send = PlotterGCodeGenerator::generate(paths, m_profile);
+    const GCodeGenResult send = PlotterGCodeGenerator::generate(paths, job.profile);
     if (!send.ok) {
         out.error = send.error;
         return out;
     }
 
-    const GCodeGenResult preview = PlotterGCodeGenerator::generate_preview(paths, m_profile, m_profile.pen_tip_width);
+    const GCodeGenResult preview = PlotterGCodeGenerator::generate_preview(paths, job.profile, job.profile.pen_tip_width);
     if (!preview.ok) {
         out.error = preview.error;
         return out;
     }
-
-    m_last_paths = std::move(paths);
-    m_has_result = true;
 
     out.ok            = true;
     out.preview_gcode = preview.gcode;
     out.draw_length   = send.draw_length;
     out.travel_length = send.travel_length;
     out.path_count    = send.path_count;
+    out.ordered_paths = std::move(paths);
     return out;
 }
 

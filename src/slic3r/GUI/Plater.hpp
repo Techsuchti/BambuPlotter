@@ -16,6 +16,7 @@
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
+#include "Plotter/PlotterController.hpp"
 #include "Jobs/Job.hpp"
 #include "Jobs/Worker.hpp"
 #include "Search.hpp"
@@ -396,10 +397,14 @@ public:
     void send_plot();
     bool plotter_can_generate() const;
     bool plotter_can_send() const;
-    // Feeds generated preview G-code into the Preview tab WITHOUT wiping the
-    // model (unlike load_gcode, which force-creates a new project).
-    void load_plotter_gcode_preview(const std::string &gcode_utf8);
-    class PlotterController *plotter_controller();
+    // Completion handler of the async Generate (called on the main thread):
+    // adopts the worker result and injects the processed preview into the
+    // Preview tab WITHOUT wiping the model (unlike load_gcode, which
+    // force-creates a new project).
+    void plotter_generate_finished(std::shared_ptr<PlotterController::GenerateOutput> out,
+                                   std::shared_ptr<GCodeProcessorResult> processed,
+                                   std::shared_ptr<DynamicConfig> render_config);
+    PlotterController *plotter_controller();
 
     // OrcaSlicer calibration
     void calib_pa(const Calib_Params &params);

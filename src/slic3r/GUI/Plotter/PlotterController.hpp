@@ -36,12 +36,26 @@ public:
         double      draw_length   = 0.;
         double      travel_length = 0.;
         size_t      path_count    = 0;
+        // Optimizer-ordered paper-space paths; adopted on the main thread
+        // after a successful run so Send uploads exactly what was previewed.
+        Plotter::PlotPaths ordered_paths;
     };
 
-    // Collects every artwork object's strokes (current transforms), orders
-    // them, generates + validates the sendable job G-code, and produces the
-    // preview variant. Caches the ordered paper-space paths on success.
-    GenerateOutput generate(const Model &model);
+    // Worker-thread half of Generate plot: pure compute over copied inputs
+    // (paths must be collected on the MAIN thread - they read the Model).
+    struct GenerateJob
+    {
+        Plotter::PlotPaths          paths;   // paper space, unordered
+        Plotter::PlotterToolProfile profile;
+    };
+    static GenerateOutput run_generate(GenerateJob &&job);
+
+    // Main-thread adoption of a successful worker result.
+    void adopt_result(Plotter::PlotPaths &&ordered_paths)
+    {
+        m_last_paths = std::move(ordered_paths);
+        m_has_result = true;
+    }
 
     // True while the last generated result still matches the plate (cleared
     // whenever the model changes).

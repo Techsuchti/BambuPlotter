@@ -137,6 +137,7 @@
 #include "InstanceCheck.hpp"
 #include "NotificationManager.hpp"
 #include "PresetComboBoxes.hpp"
+#include <thread>
 #include "MsgDialog.hpp"
 #include "Plotter/PlotterArtworkImport.hpp"
 #include "Plotter/PlotterConfigPanel.hpp"
@@ -845,12 +846,27 @@ void Sidebar::priv::layout_printer(bool isBBL, bool isDual)
         vsizer_printer->AddSpacer(FromDIP(4));
     }
 
-    btn_connect_printer->Show(!isBBL);
-    btn_sync_printer->Show(isBBL);
+    // BambuPlotter: the Printer section picks the machine and the plate
+    // (they drive the rendered bed only); nozzle diameter/flow and filament
+    // sync are extruder machinery - never shown for a pen. The sizer-item
+    // Show calls below are the canonical switch (they recursively re-show
+    // their windows), so the plotter flag must live HERE.
+    const bool show_extruder_ui = !Plater::plotter_mode();
+    btn_connect_printer->Show(!isBBL && show_extruder_ui);
+    btn_sync_printer->Show(isBBL && show_extruder_ui);
     panel_printer_bed->Show(isBBL);
     vsizer_printer->GetItem(2)->GetSizer()->GetItem(1)->Show(isDual);
-    vsizer_printer->GetItem(2)->Show(isBBL && isDual);
-    vsizer_printer->GetItem(3)->Show(isBBL && !isDual);
+    vsizer_printer->GetItem(2)->Show(isBBL && isDual && show_extruder_ui);
+    vsizer_printer->GetItem(3)->Show(isBBL && !isDual && show_extruder_ui);
+
+    // BambuPlotter: with the extruder rows gone the printer row is only as
+    // tall as the preset panel, clipping the bed's "Texture..." label. Give
+    // both panels room for the thumbnail plus a label line.
+    if (Plater::plotter_mode()) {
+        const wxSize plotter_panel_size(FromDIP(96), FromDIP(88));
+        panel_printer_preset->SetMinSize(plotter_panel_size);
+        panel_printer_bed->SetMinSize(plotter_panel_size);
+    }
 }
 
 void Sidebar::priv::flush_printer_sync(bool restart)
@@ -3170,21 +3186,34 @@ Sidebar::Sidebar(Plater *parent)
     p->sizer_params->Add(p->object_layers->get_sizer(), 0, wxEXPAND | wxTOP, 0);
 
     if (Plater::plotter_mode()) {
-        // BambuPlotter: the sidebar holds plotter configuration + the native
-        // object list. The 3D preset sections stay constructed (presets and
-        // the plate pipeline are load-bearing) but hidden - hide every
-        // direct child of the scrolled sizer except the object-list block.
+        // BambuPlotter: the sidebar holds the native Printer section (its
+        // printer/plate choice drives the rendered bed size only - motion
+        // bounds always come from the calibrated profile), the plotter
+        // configuration and the native object list. Filament/Process
+        // sections stay constructed (presets and the plate pipeline are
+        // load-bearing) but hidden.
         for (size_t i = 0; i < scrolled_sizer->GetItemCount(); ++i) {
             wxSizerItem *item = scrolled_sizer->GetItem(i);
             if (item == nullptr || item->GetSizer() == p->sizer_params)
                 continue;
-            if (wxWindow *w = item->GetWindow(); w != nullptr)
-                w->Hide();
+            wxWindow *w = item->GetWindow();
+            if (w == nullptr || w == p->m_panel_printer_title || w == p->m_panel_printer_content)
+                continue;
+            w->Hide();
         }
         if (auto params_panel = ((MainFrame*)parent->GetParent())->m_param_panel)
             params_panel->set_force_hidden(true);
         p->plotter_config_panel = new PlotterConfigPanel(p->scrolled);
-        scrolled_sizer->Insert(0, p->plotter_config_panel, 0, wxEXPAND);
+        // Below the native Printer section, like a preset section would be.
+        size_t insert_pos = 0;
+        for (size_t i = 0; i < scrolled_sizer->GetItemCount(); ++i) {
+            wxSizerItem *item = scrolled_sizer->GetItem(i);
+            if (item != nullptr && item->GetWindow() == p->m_panel_printer_content) {
+                insert_pos = i + 1;
+                break;
+            }
+        }
+        scrolled_sizer->Insert(insert_pos, p->plotter_config_panel, 0, wxEXPAND);
     }
 
     auto *sizer = new wxBoxSizer(wxVERTICAL);
@@ -6393,6 +6422,10 @@ public:
 };
 
 // Plater / private
+// BambuPlotter: owner-id for the plate-thumbnail progress timer, kept
+// distinct from the background_process_timer (id 0) on the same window.
+static constexpr int PLOTTER_PROGRESS_TIMER_ID = 4711;
+
 struct Plater::priv
 {
 private:
@@ -6554,10 +6587,18 @@ public:
 
     // BambuPlotter application state (profile + last generated plot).
     PlotterController           plotter;
-    // True while load_plotter_gcode_preview runs: the gcode renderer calls
+    // True while the preview injection runs: the gcode renderer calls
     // schedule_background_process() as a benign end-of-load poke, which the
     // plotter staleness hook must not mistake for a model change.
     bool                        plotter_injecting = false;
+    // True while the async Generate worker is running (buttons disabled,
+    // re-entry blocked).
+    bool                        plotter_generating = false;
+    // Animated plate-thumbnail progress while generating (the worker phases
+    // are too coarse for real percentages, so ease 0->95 on a timer and snap
+    // to 100 on completion - same visual channel the slicer uses).
+    wxTimer                     plotter_progress_timer;
+    float                       plotter_progress = 0.f;
 
     std::string                 label_btn_export;
     std::string                 label_btn_send;
@@ -7259,9 +7300,20 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     this->background_process_timer.SetOwner(this->q, 0);
     this->q->Bind(wxEVT_TIMER, [this](wxTimerEvent &evt)
     {
+        if (evt.GetId() == PLOTTER_PROGRESS_TIMER_ID) {
+            // Ease the plate-thumbnail bar toward 95% while the worker runs.
+            plotter_progress += (95.f - plotter_progress) * 0.18f;
+            PartPlate *plate = partplate_list.get_curr_plate();
+            if (plate != nullptr)
+                plate->update_slicing_percent(plotter_progress);
+            if (view3D) view3D->get_canvas3d()->set_as_dirty();
+            if (preview) preview->get_canvas3d()->set_as_dirty();
+            return;
+        }
         if (!this->suppressed_backround_processing_update)
             this->update_restart_background_process(false, false);
     });
+    this->plotter_progress_timer.SetOwner(this->q, PLOTTER_PROGRESS_TIMER_ID);
 
     update();
     // Orca: Make sidebar dockable
@@ -20196,7 +20248,7 @@ PlotterController *Plater::plotter_controller() { return &p->plotter; }
 
 bool Plater::plotter_can_generate() const
 {
-    if (!p->plotter.profile_valid())
+    if (p->plotter_generating || !p->plotter.profile_valid())
         return false;
     for (const ModelObject *obj : p->model.objects)
         for (const ModelVolume *vol : obj->volumes)
@@ -20208,11 +20260,15 @@ bool Plater::plotter_can_generate() const
 bool Plater::plotter_can_send() const
 {
     const PartPlate *plate = p->partplate_list.get_curr_plate();
-    return p->plotter.has_current_result() && plate != nullptr && plate->is_slice_result_valid();
+    return !p->plotter_generating && p->plotter.has_current_result()
+        && plate != nullptr && plate->is_slice_result_valid();
 }
 
 void Plater::generate_plot()
 {
+    if (p->plotter_generating)
+        return;
+
     if (!p->plotter.profile_valid()) {
         p->plotter.reload_profile(); // the wizard may have just written it
         if (!p->plotter.profile_valid()) {
@@ -20224,23 +20280,103 @@ void Plater::generate_plot()
         }
     }
 
-    const PlotterController::GenerateOutput out = p->plotter.generate(p->model);
-    if (!out.ok) {
-        MessageDialog dlg(wxGetApp().mainframe, from_u8(out.error), _L("Generate plot"), wxOK | wxICON_WARNING);
+    // Snapshot the artwork on the MAIN thread (cheap copies of markup +
+    // transforms); ALL heavy work - SVG re-import, fill composition,
+    // hatching, centerlines, optimization, G-code - runs on the worker.
+    std::string collect_error;
+    std::vector<ArtworkSnapshot> snapshots = collect_artwork_snapshots(p->model, &collect_error);
+    if (snapshots.empty()) {
+        MessageDialog dlg(wxGetApp().mainframe, from_u8(collect_error), _L("Generate plot"), wxOK | wxICON_WARNING);
         dlg.ShowModal();
         return;
     }
 
-    load_plotter_gcode_preview(out.preview_gcode);
+    p->plotter_generating = true;
+    p->plotter.invalidate_result();
 
+    // Preview tab immediately, working notification, buttons disabled,
+    // animated plate-thumbnail progress bar (the slicer's feedback channel).
+    wxGetApp().mainframe->select_tab(MainFrame::tpPreview);
+    p->set_current_panel(p->preview, true);
     p->notification_manager->push_notification(NotificationType::CustomNotification,
         NotificationManager::NotificationLevel::RegularNotificationLevel,
-        (boost::format(_u8L("Plot ready: %1% strokes, %2% mm drawing, %3% mm travel."))
-             % out.path_count % int(std::lround(out.draw_length)) % int(std::lround(out.travel_length))).str());
+        _u8L("Generating plot") + "...");
+    p->plotter_progress = 0.f;
+    if (PartPlate *plate = p->partplate_list.get_curr_plate())
+        plate->update_slicing_percent(0.f);
+    p->plotter_progress_timer.Start(80);
+    p->main_frame->update_slice_print_status(MainFrame::eEventSliceUpdate, true, true);
+
+    const Plotter::PlotterToolProfile profile = p->plotter.profile();
+    const std::string gcode_path = (fs::path(data_dir()) / "plotter" / "preview.gcode").string();
+
+    std::thread([snapshots = std::move(snapshots), profile, gcode_path]() mutable {
+
+        auto out = std::make_shared<PlotterController::GenerateOutput>();
+        std::string paths_error;
+        Plotter::PlotPaths paths = paper_paths_from_snapshots(snapshots, profile, &paths_error);
+        if (paths.empty()) {
+            out->error = paths_error.empty() ? std::string("nothing to plot") : paths_error;
+        } else {
+            PlotterController::GenerateJob job;
+            job.paths   = std::move(paths);
+            job.profile = profile;
+            *out = PlotterController::run_generate(std::move(job));
+        }
+        auto processed     = std::make_shared<GCodeProcessorResult>();
+        auto render_config = std::make_shared<DynamicConfig>();
+        if (out->ok) {
+            boost::system::error_code ec;
+            fs::create_directories(fs::path(gcode_path).parent_path(), ec);
+            std::ofstream file(gcode_path, std::ios::trunc | std::ios::binary);
+            file << out->preview_gcode;
+            if (!file) {
+                out->ok    = false;
+                out->error = "failed to write the preview G-code file";
+            } else {
+                file.close();
+                GCodeProcessor processor;
+                processor.init_filament_maps_and_nozzle_type_when_import_only_gcode();
+                try {
+                    processor.process_file(gcode_path);
+                    *processed     = std::move(processor.extract_result());
+                    *render_config = processor.export_config_for_render();
+                } catch (const std::exception &ex) {
+                    out->ok    = false;
+                    out->error = ex.what();
+                }
+            }
+        }
+        wxGetApp().CallAfter([out, processed, render_config]() {
+            Plater *plater = wxGetApp().plater();
+            if (plater != nullptr)
+                plater->plotter_generate_finished(out, processed, render_config);
+        });
+    }).detach();
 }
 
-void Plater::load_plotter_gcode_preview(const std::string &gcode_utf8)
+void Plater::plotter_generate_finished(std::shared_ptr<PlotterController::GenerateOutput> out,
+                                       std::shared_ptr<GCodeProcessorResult> processed,
+                                       std::shared_ptr<DynamicConfig> render_config)
 {
+    p->plotter_generating = false;
+    p->plotter_progress_timer.Stop();
+
+    if (out == nullptr || !out->ok) {
+        // Reset the thumbnail bar (negative = no bar / unsliced).
+        if (PartPlate *plate = p->partplate_list.get_curr_plate())
+            plate->update_slicing_percent(-1.f);
+        p->notification_manager->push_notification(NotificationType::CustomNotification,
+            NotificationManager::NotificationLevel::WarningNotificationLevel,
+            _u8L("Generate plot failed") + ": " + (out == nullptr ? std::string("internal error") : out->error));
+        p->main_frame->update_slice_print_status(MainFrame::eEventSliceUpdate, true, true);
+        return;
+    }
+
+    p->plotter.adopt_result(std::move(out->ordered_paths));
+
+    // ---- Injection into the Preview (main thread) ----------------------
+
     // The staleness hook must ignore the renderer's own schedule pokes for
     // the whole injection (cleared on every exit path).
     struct InjectingGuard
@@ -20261,45 +20397,20 @@ void Plater::load_plotter_gcode_preview(const std::string &gcode_utf8)
     p->partplate_list.update_slice_context_to_current_plate(p->background_process);
     p->preview->update_gcode_result(p->partplate_list.get_current_slice_result());
 
-    // A real file: the sequential view's gcode window seeks it on disk.
-    const fs::path dir = fs::path(data_dir()) / "plotter";
-    boost::system::error_code ec;
-    fs::create_directories(dir, ec);
-    const fs::path gcode_path = dir / "preview.gcode";
-    {
-        std::ofstream out(gcode_path.string(), std::ios::trunc | std::ios::binary);
-        out << gcode_utf8;
-        if (!out) {
-            show_error(this, _L("Failed to write the preview G-code file."));
-            return;
-        }
-    }
-
-    // Show the Preview tab BEFORE loading: Preview::load_print_as_fff only
-    // loads while the panel is shown (same ordering as load_gcode).
+    // Re-assert the Preview tab (the user may have switched away while the
+    // worker ran); load_print_as_fff only loads while the panel is shown.
     wxGetApp().mainframe->select_tab(MainFrame::tpPreview);
     p->set_current_panel(p->preview, true);
 
-    wxBusyCursor wait;
-
-    GCodeProcessor processor;
-    processor.init_filament_maps_and_nozzle_type_when_import_only_gcode();
-    try {
-        processor.process_file(gcode_path.string());
-    } catch (const std::exception &ex) {
-        show_error(this, ex.what());
-        return;
-    }
-
     GCodeProcessorResult *current_result = p->partplate_list.get_current_slice_result();
     Print &current_print = p->partplate_list.get_current_fff_print();
-    *current_result = std::move(processor.extract_result());
+    *current_result = std::move(*processed);
 
     // Artwork instances are printable=false, so this apply creates zero
     // PrintObjects; set_gcode_file_ready afterwards satisfies the
     // psGCodeExport preview gate.
     current_print.apply(this->model(), wxGetApp().preset_bundle->full_config());
-    current_print.apply_config_for_render(processor.export_config_for_render());
+    current_print.apply_config_for_render(*render_config);
     current_print.set_gcode_file_ready();
 
     p->partplate_list.get_curr_plate()->update_slice_result_valid_state(true);
@@ -20317,6 +20428,11 @@ void Plater::load_plotter_gcode_preview(const std::string &gcode_utf8)
 
     canvas->zoom_to_plate(0);
     p->main_frame->update_slice_print_status(MainFrame::eEventSliceUpdate, true, true);
+
+    p->notification_manager->push_notification(NotificationType::CustomNotification,
+        NotificationManager::NotificationLevel::RegularNotificationLevel,
+        (boost::format(_u8L("Plot ready: %1% strokes, %2% mm drawing, %3% mm travel."))
+             % out->path_count % int(std::lround(out->draw_length)) % int(std::lround(out->travel_length))).str());
 }
 
 void Plater::send_plot()

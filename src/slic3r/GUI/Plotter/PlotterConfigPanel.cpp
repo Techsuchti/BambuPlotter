@@ -71,7 +71,9 @@ void PlotterConfigPanel::build_ui()
 
     // --- Pen --------------------------------------------------------------
     add_title(_L("Pen"));
+    // Space-between rows: label column grows, controls hug the right edge.
     auto *grid = new wxFlexGridSizer(4, 2, FromDIP(6), FromDIP(8));
+    grid->AddGrowableCol(0, 1);
     auto add_spin = [&](const wxString &label, double lo, double hi, double inc) {
         grid->Add(new wxStaticText(this, wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
         auto *s = new wxSpinCtrlDouble(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
@@ -80,14 +82,14 @@ void PlotterConfigPanel::build_ui()
         s->SetDigits(2);
         s->SetIncrement(inc);
         s->Bind(wxEVT_SPINCTRLDOUBLE, [this](wxSpinDoubleEvent &) { on_setting_changed(); });
-        grid->Add(s, 0);
+        grid->Add(s, 0, wxALIGN_RIGHT);
         return s;
     };
     m_tip_width_spin    = add_spin(_L("Tip width (mm)"),        0.1,   5.0, 0.05);
     m_travel_speed_spin = add_spin(_L("Travel speed (mm/s)"),   5.0, 300.0, 5.0);
     m_draw_speed_spin   = add_spin(_L("Draw speed (mm/s)"),     1.0, 300.0, 5.0);
     m_lift_speed_spin   = add_spin(_L("Pen lift speed (mm/s)"), 1.0,  50.0, 1.0);
-    root->Add(grid, 0, wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, gap);
+    root->Add(grid, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, gap);
 
     // --- Fill (solid SVG areas) --------------------------------------------
     add_title(_L("Fill"));
@@ -96,12 +98,13 @@ void PlotterConfigPanel::build_ui()
     root->Add(m_fill_check, 0, wxLEFT | wxRIGHT | wxTOP, gap);
 
     auto *fgrid = new wxFlexGridSizer(3, 2, FromDIP(6), FromDIP(8));
+    fgrid->AddGrowableCol(0, 1);
     fgrid->Add(new wxStaticText(this, wxID_ANY, _L("Pattern")), 0, wxALIGN_CENTER_VERTICAL);
     m_pattern_choice = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(110), -1));
     m_pattern_choice->Append(_L("Lines"));
     m_pattern_choice->Append(_L("Concentric"));
     m_pattern_choice->Bind(wxEVT_CHOICE, [this](wxCommandEvent &) { on_setting_changed(); });
-    fgrid->Add(m_pattern_choice, 0);
+    fgrid->Add(m_pattern_choice, 0, wxALIGN_RIGHT);
     auto add_fill_spin = [&](const wxString &label, double lo, double hi, double inc) {
         fgrid->Add(new wxStaticText(this, wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
         auto *s = new wxSpinCtrlDouble(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
@@ -110,13 +113,13 @@ void PlotterConfigPanel::build_ui()
         s->SetDigits(2);
         s->SetIncrement(inc);
         s->Bind(wxEVT_SPINCTRLDOUBLE, [this](wxSpinDoubleEvent &) { on_setting_changed(); });
-        fgrid->Add(s, 0);
+        fgrid->Add(s, 0, wxALIGN_RIGHT);
         return s;
     };
     // Spacing = tip width x factor: <1 overlaps for solid coverage.
     m_fill_spacing_spin = add_fill_spin(_L("Spacing (x tip width)"), 0.3, 3.0, 0.05);
     m_fill_angle_spin   = add_fill_spin(_L("Hatch angle (deg)"),     0.0, 180.0, 5.0);
-    root->Add(fgrid, 0, wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, gap);
+    root->Add(fgrid, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, gap);
 
     SetSizer(root);
 }

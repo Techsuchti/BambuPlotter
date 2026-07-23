@@ -2,7 +2,9 @@
 #define slic3r_PlotterArtworkImport_hpp_
 
 #include <string>
+#include <vector>
 
+#include "libslic3r/Plotter/PlotterArtwork.hpp"
 #include "libslic3r/Plotter/PlotterPath.hpp"
 
 namespace Slic3r {
@@ -21,11 +23,29 @@ class Plater;
 // Shows a message dialog and returns false on failure.
 bool import_svg_as_artwork(Plater &plater, const std::string &svg_path);
 
-// Doc-space strokes of every artwork volume in the model, mapped through the
-// current instance transforms into PAPER space (mm, origin = calibrated
-// paper origin) — ready for PathOptimizer / PlotterGCodeGenerator.
-// Returns empty and fills *error when the model holds no artwork, a source
-// re-import fails, or an instance is rotated off the plate plane.
+// One artwork instance, snapshotted so a worker thread can process it
+// without touching the Model (markup + transform copies only).
+struct ArtworkSnapshot
+{
+    Plotter::ArtworkInfo info;
+    Transform3d          world; // instance matrix * volume matrix
+    std::string          name;
+};
+
+// MAIN THREAD: cheap gather of every artwork instance. Empty + *error when
+// the model holds no artwork.
+std::vector<ArtworkSnapshot> collect_artwork_snapshots(const Model &model, std::string *error);
+
+// WORKER-SAFE (pure compute, no GUI, no Model): re-import, painter-order
+// fill composition, hatching, centerlines, then map through the snapshot
+// transforms into PAPER space (mm, origin = calibrated paper origin) —
+// ready for PathOptimizer / PlotterGCodeGenerator. This is the expensive
+// step (Clipper + medial axis); never call it on the UI thread.
+Plotter::PlotPaths paper_paths_from_snapshots(const std::vector<ArtworkSnapshot> &snapshots,
+                                              const Plotter::PlotterToolProfile &profile,
+                                              std::string *error);
+
+// Convenience for synchronous callers: snapshots + paper paths in one call.
 Plotter::PlotPaths collect_artwork_paper_paths(const Model &model,
                                                const Plotter::PlotterToolProfile &profile,
                                                std::string *error);

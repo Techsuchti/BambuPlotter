@@ -126,75 +126,99 @@ bool import_svg_as_artwork(Plater &plater, const std::string &svg_path)
     return true;
 }
 
-PlotPaths collect_artwork_paper_paths(const Model &model,
-                                      const PlotterToolProfile &profile,
-                                      std::string *error)
+std::vector<ArtworkSnapshot> collect_artwork_snapshots(const Model &model, std::string *error)
+{
+    std::vector<ArtworkSnapshot> snapshots;
+    for (const ModelObject *obj : model.objects)
+        for (const ModelVolume *vol : obj->volumes) {
+            if (!vol->is_plotter_artwork())
+                continue;
+            for (const ModelInstance *inst : obj->instances) {
+                ArtworkSnapshot snap;
+                snap.info  = *vol->plotter_artwork;
+                snap.world = inst->get_transformation().get_matrix() *
+                             vol->get_transformation().get_matrix();
+                snap.name  = obj->name;
+                snapshots.emplace_back(std::move(snap));
+            }
+        }
+    if (snapshots.empty() && error != nullptr)
+        *error = "there is no artwork on the plate - import an SVG first";
+    return snapshots;
+}
+
+PlotPaths paper_paths_from_snapshots(const std::vector<ArtworkSnapshot> &snapshots,
+                                     const PlotterToolProfile &profile,
+                                     std::string *error)
 {
     PlotPaths out;
     // Pen-tip bed position of the paper origin (see PlotterToolProfile.hpp:
     // paper_origin is commanded XY, the ink lands pen_offset away from it).
     const Vec2d anchor = profile.paper_origin + profile.pen_offset;
 
-    for (const ModelObject *obj : model.objects) {
-        for (const ModelVolume *vol : obj->volumes) {
-            if (!vol->is_plotter_artwork())
-                continue;
-            std::string import_error;
-            SvgImportResult imported = vol->plotter_artwork->import_result(&import_error);
-            PlotPaths doc = std::move(imported.paths); // stroke-painted shapes
-            if (!imported.fill_regions.empty()) {
-                if (profile.fill_enabled) {
-                    // Full fill plan: composed-ink outlines + hatch +
-                    // centerlines for thin parts.
-                    HatchParams hatch_params;
-                    hatch_params.pattern   = profile.hatch_pattern == 1 ? HatchPattern::Concentric : HatchPattern::Lines;
-                    hatch_params.spacing   = profile.hatch_spacing();
-                    hatch_params.angle_deg = profile.hatch_angle;
-                    hatch_params.inset     = 0.5 * profile.pen_tip_width;
-                    hatch_params.pen_width = profile.pen_tip_width;
-                    PlotPaths fill = plot_fill_regions(imported.fill_regions, hatch_params);
-                    doc.insert(doc.end(), std::make_move_iterator(fill.begin()),
-                               std::make_move_iterator(fill.end()));
-                } else {
-                    // Fill disabled: draw the raw contours as line art.
-                    for (const SvgFillRegion &region : imported.fill_regions)
-                        doc.insert(doc.end(), region.contours.begin(), region.contours.end());
-                }
+    for (const ArtworkSnapshot &snap : snapshots) {
+        std::string import_error;
+        SvgImportResult imported = snap.info.import_result(&import_error);
+        PlotPaths doc = std::move(imported.paths); // stroke-painted shapes
+        if (!imported.fill_regions.empty()) {
+            if (profile.fill_enabled) {
+                // Full fill plan: composed-ink outlines + hatch +
+                // centerlines for thin parts.
+                HatchParams hatch_params;
+                hatch_params.pattern   = profile.hatch_pattern == 1 ? HatchPattern::Concentric : HatchPattern::Lines;
+                hatch_params.spacing   = profile.hatch_spacing();
+                hatch_params.angle_deg = profile.hatch_angle;
+                hatch_params.inset     = 0.5 * profile.pen_tip_width;
+                hatch_params.pen_width = profile.pen_tip_width;
+                PlotPaths fill = plot_fill_regions(imported.fill_regions, hatch_params);
+                doc.insert(doc.end(), std::make_move_iterator(fill.begin()),
+                           std::make_move_iterator(fill.end()));
+            } else {
+                // Fill disabled: draw the raw contours as line art.
+                for (const SvgFillRegion &region : imported.fill_regions)
+                    doc.insert(doc.end(), region.contours.begin(), region.contours.end());
             }
-            if (doc.empty()) {
-                if (error != nullptr)
-                    *error = obj->name + ": " +
-                             (import_error.empty() ? std::string("artwork has no strokes") : import_error);
-                return {};
+        }
+        if (doc.empty()) {
+            if (error != nullptr)
+                *error = snap.name + ": " +
+                         (import_error.empty() ? std::string("artwork has no strokes") : import_error);
+            return {};
+        }
+
+        // The pen only ever draws in the plate plane.
+        const Vec3d uz = snap.world.linear() * Vec3d(0., 0., 1.);
+        if (uz.norm() < 1e-9 || std::abs(uz.z()) / uz.norm() < 0.999) {
+            if (error != nullptr)
+                *error = snap.name + ": artwork is rotated off the plate plane; reset its rotation";
+            return {};
+        }
+        const Vec2d pivot = snap.info.pivot;
+        for (const PlotPath &p : doc) {
+            PlotPath t;
+            t.closed = p.closed;
+            t.points.reserve(p.points.size());
+            for (const Vec2d &pt : p.points) {
+                const Vec3d bed = snap.world * Vec3d(pt.x() - pivot.x(), pt.y() - pivot.y(), 0.);
+                t.points.emplace_back(bed.x() - anchor.x(), bed.y() - anchor.y());
             }
-            const Vec2d pivot = vol->plotter_artwork->pivot;
-            for (const ModelInstance *inst : obj->instances) {
-                const Transform3d m = inst->get_transformation().get_matrix() *
-                                      vol->get_transformation().get_matrix();
-                // The pen only ever draws in the plate plane.
-                const Vec3d uz = m.linear() * Vec3d(0., 0., 1.);
-                if (uz.norm() < 1e-9 || std::abs(uz.z()) / uz.norm() < 0.999) {
-                    if (error != nullptr)
-                        *error = obj->name + ": artwork is rotated off the plate plane; reset its rotation";
-                    return {};
-                }
-                for (const PlotPath &p : doc) {
-                    PlotPath t;
-                    t.closed = p.closed;
-                    t.points.reserve(p.points.size());
-                    for (const Vec2d &pt : p.points) {
-                        const Vec3d bed = m * Vec3d(pt.x() - pivot.x(), pt.y() - pivot.y(), 0.);
-                        t.points.emplace_back(bed.x() - anchor.x(), bed.y() - anchor.y());
-                    }
-                    out.emplace_back(std::move(t));
-                }
-            }
+            out.emplace_back(std::move(t));
         }
     }
 
     if (out.empty() && error != nullptr)
         *error = "there is no artwork on the plate - import an SVG first";
     return out;
+}
+
+PlotPaths collect_artwork_paper_paths(const Model &model,
+                                      const PlotterToolProfile &profile,
+                                      std::string *error)
+{
+    const std::vector<ArtworkSnapshot> snapshots = collect_artwork_snapshots(model, error);
+    if (snapshots.empty())
+        return {};
+    return paper_paths_from_snapshots(snapshots, profile, error);
 }
 
 bool save_plotter_project(Plater &plater, const std::string &path, std::string *error)
