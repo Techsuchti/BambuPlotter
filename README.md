@@ -1,4 +1,4 @@
-# ✒️ BambuPlotter
+# BambuPlotter
 
 **Turn your Bambu Lab A1 mini into a pen plotter — with the exact experience of preparing a print in Bambu Studio.**
 
@@ -16,27 +16,27 @@ This is not an app inside another app. It *is* Bambu Studio's workflow — just 
 - **Safety by construction** — jobs are movement-only G-code (no heating, no extrusion, no homing), checked by a default-deny validator against your calibrated bounds before anything is sent.
 - **Projects** — save/open `.bplot` files carrying your artwork (SVG embedded), placements, and pen/fill settings. Machine calibration never travels with a project.
 
-> ⚠️ **Unofficial software.** Not affiliated with Bambu Lab. You are driving real hardware with a modified tool — supervise your first plots and use at your own risk.
+> **Unofficial software.** Not affiliated with Bambu Lab. You are driving real hardware with a modified tool — supervise your first plots and use at your own risk.
 
 ---
 
-## 🖨️ Step 0 — Print a pen holder
+## Step 0 — Print a pen holder
 
 You need a way to hold a pen next to the toolhead. Recommended (this is what BambuPlotter was developed and tested with):
 
-**[A1 Plotter Module on MakerWorld](https://makerworld.com/en/models/2433877-a1-plotter-module?from=search#profileId-2737084)** — print it on your A1 mini *before* you convert it. 🙂
+**[A1 Plotter Module on MakerWorld](https://makerworld.com/en/models/2433877-a1-plotter-module?from=search#profileId-2737084)** — print it on your A1 mini *before* you convert it.
 
 Any rigid side-mount pen holder will work — BambuPlotter doesn't assume a specific geometry. The calibration wizard measures **your** setup (paper position, safe bounds, pen heights, and the pen↔nozzle offset).
 
 **One hard rule:** if your pen tip sits *below* the nozzle tip (most holders), **never home the printer with the pen mounted** — Z-homing presses the bed against the toolhead and would crush the pen. The workflow is always: home bare → mount pen → calibrate → plot. The wizard enforces it.
 
-## 🔌 Step 1 — Printer setup
+## Step 1 — Printer setup
 
 1. On the printer: enable **LAN-Only Mode** with **Developer Mode** (network settings) and note the access code.
 2. BambuPlotter talks to the printer over LAN via the open-source [open-bamboo-networking](https://github.com/ClusterM/open-bamboo-networking) plugin (discovery, live status, FTPS upload, job control).
 3. In the app's **Device** tab, connect to your printer with the access code.
 
-## 🧭 Step 2 — Calibrate (once per paper/pen setup)
+## Step 2 — Calibrate (once per paper/pen setup)
 
 Tape your paper to the plate, then open **Prepare → sidebar → Calibrate…** The wizard walks you through six steps:
 
@@ -49,20 +49,20 @@ Tape your paper to the plate, then open **Prepare → sidebar → Calibrate…**
 
 The calibrated paper area appears on the plate as a white sheet. Reopening the wizard later keeps the machine position — no re-homing needed.
 
-## 🎨 Step 3 — Plot
+## Step 3 — Plot
 
 1. **Import an SVG** (File → Import, drag & drop, or the toolbar). It lands on the paper as a real object — move, rotate, scale it like any model.
 2. Tune **Pen** (tip width, speeds) and **Fill** (hatching on/off, pattern, spacing × tip width, angle) in the sidebar. Tip width drives hatch density — a 0.5 mm pen fills denser than a 0.8 mm one.
 3. **Generate plot** — the plotter's "slice". The Preview shows ink on paper with stroke count, drawing/travel length, and a time estimate. Moving anything makes the plot stale until you regenerate — the printer always runs exactly what you previewed.
 4. **Send plot** — confirm, and the job uploads and starts. The printer runs it standalone (you can disconnect). At the end, the pen lifts and the bed slides forward to present the sheet. Heaters are commanded off at the end of every job.
 
-## 🎬 Demos
+## Demos
 
 <!-- gifs / videos go here -->
 
 *Coming soon.*
 
-## ⚠️ Limitations
+## Limitations
 
 - **Hardware**: developed and hardware-tested on the **A1 mini** only.
 - **Platform**: builds and runs on **macOS (Apple Silicon)**; other platforms untested.
@@ -72,7 +72,7 @@ The calibrated paper area appears on the plate as a white sheet. Reopening the w
 - **Preview at far zoom**: very sparse hatching can look denser than it is (sub-pixel rendering) — zoom in for the true spacing. The plotted output is always true to the data.
 - **Camera view** is unavailable (limitation of the open networking plugin).
 
-## 🛠️ Building
+## Building
 
 macOS, Apple Silicon:
 
@@ -88,12 +88,12 @@ The packaged app lands at `build/arm64/BambuStudio/BambuPlotter.app`. Engine tes
 
 BambuPlotter keeps its settings in `~/Library/Application Support/BambuPlotter` — it never touches an official Bambu Studio installation on the same machine.
 
-## 🤝 Contributing
+## Contributing
 
 Issues, ideas, and pull requests are welcome — other printer models, other platforms, hatching patterns, multi-pen support… the fun has just started.
 
 For anything related: **daniel.oquelis@gmail.com**
 
-## 📜 License & credits
+## License & credits
 
 Licensed under the **GNU Affero General Public License v3**, like the projects it stands on: [Bambu Studio](https://github.com/bambulab/BambuStudio) by Bambu Lab, based on [PrusaSlicer](https://github.com/prusa3d/PrusaSlicer) by Prusa Research, itself based on [Slic3r](https://github.com/Slic3r/Slic3r) by Alessandro Ranellucci and the RepRap community. LAN connectivity by [open-bamboo-networking](https://github.com/ClusterM/open-bamboo-networking).
