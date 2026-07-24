@@ -29,7 +29,10 @@ namespace GUI {
 class PlotterCalibrationDialog : public DPIDialog
 {
 public:
-    PlotterCalibrationDialog(wxWindow *parent, MachineObject *machine);
+    // The controller is owned by the app (PlotterController), so calibration
+    // position survives closing and reopening the wizard - no re-home needed.
+    PlotterCalibrationDialog(wxWindow *parent, MachineObject *machine,
+                             PlotterCalibrationController &controller);
     ~PlotterCalibrationDialog() override;
 
     PlotterCalibrationController       &controller() { return m_controller; }
@@ -54,7 +57,7 @@ private:
     void   on_capture(int which);
     void   on_finish(wxCommandEvent &event);
 
-    PlotterCalibrationController m_controller;
+    PlotterCalibrationController &m_controller; // app-owned, not by value
     wxTimer                      m_timer;
 
     // step 1

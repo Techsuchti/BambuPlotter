@@ -7,6 +7,8 @@
 #include "libslic3r/Plotter/PlotterPath.hpp"
 #include "libslic3r/Plotter/PlotterToolProfile.hpp"
 
+#include "slic3r/GUI/Plotter/PlotterCalibrationController.hpp"
+
 namespace Slic3r {
 
 class Model;
@@ -69,11 +71,17 @@ public:
     const std::string &project_path() const { return m_project_path; }
     void set_project_path(const std::string &path) { m_project_path = path; }
 
+    // App-owned calibration controller: the wizard binds to THIS so its
+    // dead-reckoned position and captures survive closing/reopening the
+    // dialog (no re-home / Sync needed on every open).
+    PlotterCalibrationController &calibration() { return m_calibration; }
+
 private:
-    Plotter::PlotterToolProfile m_profile;
-    Plotter::PlotPaths          m_last_paths;
-    bool                        m_has_result = false;
-    std::string                 m_project_path;
+    Plotter::PlotterToolProfile  m_profile;
+    Plotter::PlotPaths           m_last_paths;
+    bool                         m_has_result = false;
+    std::string                  m_project_path;
+    PlotterCalibrationController m_calibration;
 };
 
 } // namespace GUI

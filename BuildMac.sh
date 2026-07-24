@@ -187,6 +187,12 @@ function build_slicer() {
             cp -R "$resources_path" ./BambuStudio.app/Contents/Resources
             # delete .DS_Store file
             find ./BambuStudio.app/ -name '.DS_Store' -delete
+            # BambuPlotter: the user-facing bundle is BambuPlotter.app
+            # (Finder search matches the file name; the dock shows it on
+            # normal launches). A symlink keeps every legacy path working.
+            rm -rf ./BambuPlotter.app
+            mv ./BambuStudio.app ./BambuPlotter.app
+            ln -sfn BambuPlotter.app BambuStudio.app
         )
 
     fi

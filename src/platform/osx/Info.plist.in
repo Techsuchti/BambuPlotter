@@ -10,6 +10,8 @@
   <string>images/BambuStudio.icns</string>
   <key>CFBundleName</key>
   <string>@SLIC3R_APP_KEY@</string>
+  <key>CFBundleDisplayName</key>
+  <string>@SLIC3R_APP_KEY@</string>
   <key>CFBundleShortVersionString</key>
   <string>@SLIC3R_APP_NAME@ @SLIC3R_BUILD_ID@</string>
   <key>CFBundleIdentifier</key>

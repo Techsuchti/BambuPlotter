@@ -167,7 +167,10 @@ void PlotterConfigPanel::on_calibrate(wxCommandEvent &)
         return;
     }
 
-    PlotterCalibrationDialog dlg(wxGetApp().mainframe, machine);
+    // Bind the wizard to the app-owned controller so its position/captures
+    // persist across opens (no re-home on every reopen).
+    PlotterController *controller = wxGetApp().plater()->plotter_controller();
+    PlotterCalibrationDialog dlg(wxGetApp().mainframe, machine, controller->calibration());
     dlg.ShowModal();
 
     // Whether finished or aborted, re-read what is on disk and re-sync.

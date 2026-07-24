@@ -48,12 +48,18 @@ wxStaticText *make_section_title(wxWindow *parent, const wxString &text)
 
 } // namespace
 
-PlotterCalibrationDialog::PlotterCalibrationDialog(wxWindow *parent, MachineObject *machine)
+PlotterCalibrationDialog::PlotterCalibrationDialog(wxWindow *parent, MachineObject *machine,
+                                                   PlotterCalibrationController &controller)
     : DPIDialog(parent, wxID_ANY, _L("Plotter Calibration"), wxDefaultPosition, wxDefaultSize,
                 wxDEFAULT_DIALOG_STYLE)
+    , m_controller(controller)
 {
     m_controller.set_machine(machine);
-    // Best effort: an absent profile is fine, the wizard fills it in.
+    // Always re-read the profile from disk: the sidebar panel writes pen and
+    // fill settings there between wizard sessions, and finalize() would
+    // otherwise save a stale copy over them. load_profile() does NOT touch
+    // the dead-reckoned position/captures - the state the shared controller
+    // exists to preserve.
     m_controller.load_profile();
 
     SetBackgroundColour(*wxWHITE);

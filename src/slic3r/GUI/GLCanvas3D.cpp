@@ -1,4 +1,5 @@
 #include "libslic3r/libslic3r.h"
+#include <limits>
 #include "GLCanvas3D.hpp"
 #include "Overview/AssemblyStepsUtils.hpp"
 
@@ -5710,6 +5711,55 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
                             m_gizmos.update_data();
                             post_event(SimpleEvent(EVT_GLCANVAS_OBJECT_SELECT));
                             m_dirty = true;
+                        }
+                    }
+                }
+
+                // BambuPlotter: pen-stroke artwork is a soup of thin boxes -
+                // GPU color-id picking rarely gets a pixel under the cursor,
+                // so clicking to select barely works. Fallback: when normal
+                // picking hit nothing, project the click to the bed plane and
+                // select any artwork whose 2D footprint contains it. Genuine
+                // hits still win (this only runs on an empty hover).
+                if (m_picking_enabled && evt.LeftDown() && Plater::plotter_mode()
+                    && m_hover_volume_idxs.empty() && !any_gizmo_active) {
+                    const Vec3d bed_pt = _mouse_to_bed_3d(pos);
+                    int   best_volume = -1;
+                    double best_area  = std::numeric_limits<double>::max();
+                    for (size_t i = 0; i < m_volumes.volumes.size(); ++i) {
+                        const GLVolume *v = m_volumes.volumes[i];
+                        if (v == nullptr || !v->is_plotter_artwork || v->volume_idx() < 0)
+                            continue;
+                        const BoundingBoxf3 bb = v->transformed_bounding_box();
+                        if (bed_pt.x() >= bb.min.x() && bed_pt.x() <= bb.max.x() &&
+                            bed_pt.y() >= bb.min.y() && bed_pt.y() <= bb.max.y()) {
+                            // Prefer the smallest footprint when they overlap.
+                            const double area = (bb.max.x() - bb.min.x()) * (bb.max.y() - bb.min.y());
+                            if (area < best_area) { best_area = area; best_volume = int(i); }
+                        }
+                    }
+                    if (best_volume >= 0) {
+                        const Selection::IndicesList before = m_selection.get_volume_idxs();
+                        m_selection.add(best_volume, !evt.CmdDown(), true);
+                        m_mouse.drag.move_requires_threshold = false;
+                        m_mouse.drag.move_start_threshold_position_2D = pos;
+                        if (before != m_selection.get_volume_idxs()) {
+                            m_gizmos.refresh_on_off_state();
+                            m_gizmos.update_data();
+                            post_event(SimpleEvent(EVT_GLCANVAS_OBJECT_SELECT));
+                            m_dirty = true;
+                        }
+                        // Also start a drag from this click (mirrors the
+                        // hover-based path below): the bed point is the drag
+                        // origin - artwork moves in the plate plane anyway.
+                        if (m_moving_enabled && m_mouse.drag.move_volume_idx == -1) {
+                            m_volumes.volumes[best_volume]->hover = GLVolume::HS_None;
+                            m_mouse.drag.move_volume_idx   = best_volume;
+                            m_selection.start_dragging();
+                            m_mouse.drag.start_position_3D = bed_pt;
+                            m_mouse.scene_position         = bed_pt;
+                            m_sequential_print_clearance_first_displacement = true;
+                            m_moving = true;
                         }
                     }
                 }
