@@ -1,8 +1,11 @@
 #include "FillHatcher.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <map>
+#include <utility>
 
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Line.hpp"
@@ -241,6 +244,88 @@ void hatch_areas(const ExPolygons &areas, const HatchParams &params, PlotPaths &
         hatch_lines(interior, params, out);
 }
 
+// Occupancy raster of the keep-out zone around ink deposited so far - the
+// cheap way to ask "would this stroke mostly land on paper that is already
+// black?". Every accepted stroke claims a keep-out disc along its spine;
+// cell size tracks the pen so the answer stays sharp for any tip.
+class InkRaster
+{
+public:
+    InkRaster(const Vec2d &bb_min, const Vec2d &bb_max, double pen_width, double keep_out)
+    {
+        m_res = std::min(std::max(pen_width / 6., 0.05), 0.15);
+        m_min = bb_min - Vec2d(keep_out + m_res, keep_out + m_res);
+        const Vec2d span = bb_max + Vec2d(keep_out + m_res, keep_out + m_res) - m_min;
+        m_w = std::max(1, int(std::ceil(span.x() / m_res)));
+        m_h = std::max(1, int(std::ceil(span.y() / m_res)));
+        // Bound memory for absurd documents; a coarser grid only makes the
+        // limiter slightly more eager.
+        while (double(m_w) * double(m_h) > 32e6) {
+            m_res *= 2.;
+            m_w = (m_w + 1) / 2;
+            m_h = (m_h + 1) / 2;
+        }
+        m_cells.assign(size_t(m_w) * size_t(m_h), 0);
+        const int r = std::max(1, int(std::lround(keep_out / m_res)));
+        for (int dy = -r; dy <= r; ++dy)
+            for (int dx = -r; dx <= r; ++dx)
+                if (dx * dx + dy * dy <= r * r)
+                    m_disc.emplace_back(dx, dy);
+    }
+
+    void stamp(const PlotPath &path)
+    {
+        each_sample(path, 0.7 * m_res, [this](const Vec2d &p) {
+            const int cx = cell_x(p), cy = cell_y(p);
+            for (const auto &[dx, dy] : m_disc) {
+                const int x = cx + dx, y = cy + dy;
+                if (x >= 0 && x < m_w && y >= 0 && y < m_h)
+                    m_cells[size_t(y) * size_t(m_w) + size_t(x)] = 1;
+            }
+        });
+    }
+
+    // Fraction of the stroke's length lying on already-inked cells.
+    double coverage(const PlotPath &path) const
+    {
+        size_t total = 0, hit = 0;
+        each_sample(path, m_res, [&](const Vec2d &p) {
+            ++total;
+            const int x = cell_x(p), y = cell_y(p);
+            if (x >= 0 && x < m_w && y >= 0 && y < m_h && m_cells[size_t(y) * size_t(m_w) + size_t(x)])
+                ++hit;
+        });
+        return total == 0 ? 0. : double(hit) / double(total);
+    }
+
+private:
+    int cell_x(const Vec2d &p) const { return int(std::floor((p.x() - m_min.x()) / m_res)); }
+    int cell_y(const Vec2d &p) const { return int(std::floor((p.y() - m_min.y()) / m_res)); }
+
+    template<class Fn> void each_sample(const PlotPath &path, double step, Fn fn) const
+    {
+        const auto  &pts = path.points;
+        const size_t n   = pts.size();
+        if (n == 0)
+            return;
+        fn(pts.front());
+        const size_t last = (path.closed && n > 2) ? n : n - 1;
+        for (size_t i = 0; i < last; ++i) {
+            const Vec2d &a     = pts[i];
+            const Vec2d &b     = pts[(i + 1) % n];
+            const int    steps = std::max(1, int(std::ceil((b - a).norm() / step)));
+            for (int k = 1; k <= steps; ++k)
+                fn(a + (b - a) * (double(k) / steps));
+        }
+    }
+
+    double               m_res = 0.1;
+    Vec2d                m_min = Vec2d::Zero();
+    int                  m_w = 0, m_h = 0;
+    std::vector<uint8_t> m_cells;
+    std::vector<std::pair<int, int>> m_disc;
+};
+
 void append_expolygon_contours(const ExPolygons &areas, double min_length, PlotPaths &out)
 {
     for (const ExPolygon &ex : areas) {
@@ -303,6 +388,7 @@ PlotPaths plot_fill_regions(const std::vector<SvgFillRegion> &regions, const Hat
 
     // Thin parts: one stroke down the middle - the pen's own width renders
     // the artist's tapering lines instead of two overlapping outlines.
+    PlotPaths centers;
     for (const ExPolygon &ex : thin) {
         Polylines centerlines;
         ex.medial_axis(scale_(0.02), scale_(2.0 * 1.2 * std::max(params.pen_width, 0.05)), &centerlines);
@@ -311,8 +397,38 @@ PlotPaths plot_fill_regions(const std::vector<SvgFillRegion> &regions, const Hat
             pts.reserve(pl.points.size());
             for (const Point &pt : pl.points)
                 pts.emplace_back(unscale(pt));
-            append_plot_path(out, std::move(pts), false, params.min_length);
+            append_plot_path(centers, std::move(pts), false, params.min_length);
         }
+    }
+
+    if (params.density_limit && !centers.empty()) {
+        BoundingBox bb;
+        for (const ExPolygon &ex : ink)
+            bb.merge(get_extents(ex));
+        // Keep-out of 3/4 pen: a stroke closer than that to existing ink
+        // overlaps it by more than a quarter of its width - fusion territory.
+        const double pen = std::max(params.pen_width, 0.05);
+        InkRaster raster(unscale(bb.min), unscale(bb.max), pen, 0.75 * pen);
+        for (const PlotPath &p : out)
+            raster.stamp(p);
+        // Longest-first: long strokes carry the drawing's structure, short
+        // ones its texture - when tone must go, texture goes first.
+        std::vector<std::pair<double, size_t>> order;
+        order.reserve(centers.size());
+        for (size_t i = 0; i < centers.size(); ++i)
+            order.emplace_back(centers[i].length(), i);
+        std::sort(order.begin(), order.end(),
+                  [](const auto &a, const auto &b) { return a.first > b.first; });
+        for (const auto &[len, idx] : order) {
+            PlotPath &p = centers[idx];
+            if (raster.coverage(p) > 0.70)
+                continue;
+            raster.stamp(p);
+            out.emplace_back(std::move(p));
+        }
+    } else {
+        for (PlotPath &p : centers)
+            out.emplace_back(std::move(p));
     }
     return out;
 }

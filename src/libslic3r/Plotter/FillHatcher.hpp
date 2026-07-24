@@ -26,6 +26,13 @@ struct HatchParams
     // of two overlapping outline passes.
     double       pen_width      = 0.5;
     bool         centerline_thin = true;
+    // plot_fill_regions only: adapt stroke density to the pen. Fine artwork
+    // hatching packed tighter than the tip would fuse into solid black and
+    // deposit multiples of the artwork's ink; like a human inker with a fat
+    // pen, draw FEWER strokes instead of fatter ones. Centerlines are kept
+    // longest-first; one is dropped when most of its length would re-ink
+    // paper this plot has already blackened.
+    bool         density_limit  = true;
 };
 
 // Interior hatch strokes only (no outlines) for the composed ink of the

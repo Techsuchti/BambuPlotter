@@ -862,6 +862,66 @@ TEST_CASE("Plotter: thin fills become single centerline strokes", "[Plotter]")
     CHECK(bar_stroke_len < 35.);
 }
 
+TEST_CASE("Plotter: density limiting thins fine hatching to pen scale", "[Plotter]")
+{
+    // Twelve 0.2 mm hairlines packed 0.35 mm apart - fine artwork hatching a
+    // 0.7 mm pen would fuse into solid black - plus one isolated short bar.
+    // Lengths decrease with the index so longest-first is deterministic.
+    std::vector<SvgFillRegion> regions;
+    for (int k = 0; k < 12; ++k) {
+        const double y = 0.35 * k, len = 25. - 0.5 * k;
+        PlotPath c;
+        c.closed = true;
+        c.points = {Vec2d(0., y), Vec2d(len, y), Vec2d(len, y + 0.2), Vec2d(0., y + 0.2)};
+        SvgFillRegion r;
+        r.contours = {c};
+        regions.push_back(r);
+    }
+    PlotPath lone;
+    lone.closed = true;
+    lone.points = {Vec2d(0., 30.), Vec2d(5., 30.), Vec2d(5., 30.2), Vec2d(0., 30.2)};
+    SvgFillRegion lone_r;
+    lone_r.contours = {lone};
+    regions.push_back(lone_r);
+
+    HatchParams params;
+    params.pattern   = HatchPattern::Lines;
+    params.spacing   = 0.7;
+    params.inset     = 0.35;
+    params.pen_width = 0.7;
+
+    auto count_strokes = [](const PlotPaths &plan, double y_min, double y_max) {
+        size_t n = 0;
+        for (const PlotPath &p : plan) {
+            const BoundingBoxf bb = get_extents({p});
+            if (!p.closed && bb.min.y() > y_min && bb.max.y() < y_max)
+                ++n;
+        }
+        return n;
+    };
+
+    params.density_limit = false;
+    const PlotPaths raw = plot_fill_regions(regions, params);
+    CHECK(count_strokes(raw, -1., 5.) == 12);
+    CHECK(count_strokes(raw, 25., 35.) == 1);
+
+    params.density_limit = true;
+    const PlotPaths limited = plot_fill_regions(regions, params);
+    const size_t kept = count_strokes(limited, -1., 5.);
+    // Neighbors 0.35 mm apart sit inside the 3/4-pen keep-out; survivors are
+    // spaced >= 0.7 mm - every other bar, tone preserved without fusion.
+    CHECK(kept >= 4);
+    CHECK(kept <= 7);
+    // Isolated detail is never sacrificed, however short.
+    CHECK(count_strokes(limited, 25., 35.) == 1);
+    // Structure first: the longest bar always survives.
+    bool longest_kept = false;
+    for (const PlotPath &p : limited)
+        if (!p.closed && p.length() > 23. && get_extents({p}).max.y() < 0.5)
+            longest_kept = true;
+    CHECK(longest_kept);
+}
+
 TEST_CASE("Plotter: concentric hatching emits closed shrinking rings", "[Plotter]")
 {
     SvgFillRegion region;
