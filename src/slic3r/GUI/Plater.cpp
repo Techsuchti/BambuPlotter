@@ -20302,9 +20302,18 @@ void Plater::generate_plot()
         NotificationManager::NotificationLevel::RegularNotificationLevel,
         _u8L("Generating plot") + "...");
     p->plotter_progress = 0.f;
-    if (PartPlate *plate = p->partplate_list.get_curr_plate())
+    if (PartPlate *plate = p->partplate_list.get_curr_plate()) {
+        // The thumbnail only draws its progress curtain in the SLICING
+        // state, which requires the plate result to be invalid - on a
+        // regenerate it would still be valid and show nothing.
+        plate->update_slice_result_valid_state(false);
+        p->partplate_list.get_current_fff_print().set_gcode_file_invalidated();
         plate->update_slicing_percent(0.f);
+    }
     p->plotter_progress_timer.Start(80);
+    // Busy pointer for the whole run (UI stays responsive; the cursor is
+    // the universal "working on it" signal).
+    wxBeginBusyCursor();
     p->main_frame->update_slice_print_status(MainFrame::eEventSliceUpdate, true, true);
 
     const Plotter::PlotterToolProfile profile = p->plotter.profile();
@@ -20361,6 +20370,8 @@ void Plater::plotter_generate_finished(std::shared_ptr<PlotterController::Genera
 {
     p->plotter_generating = false;
     p->plotter_progress_timer.Stop();
+    if (wxIsBusy())
+        wxEndBusyCursor();
 
     if (out == nullptr || !out->ok) {
         // Reset the thumbnail bar (negative = no bar / unsliced).
