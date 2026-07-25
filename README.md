@@ -4,9 +4,9 @@
 
 # BambuPlotter
 
-**Turn your Bambu Lab A1 mini into a pen plotter — with the exact experience of preparing a print in Bambu Studio.**
+**Turn your Bambu Lab 3D printer into a pen plotter — with the exact experience of preparing a print in Bambu Studio.**
 
-![Printer](https://img.shields.io/badge/printer-Bambu%20Lab%20A1%20mini-6E8CA0)
+![Printer](https://img.shields.io/badge/printers-Bambu%20Lab%20(tested%20on%20A1%20mini)-6E8CA0)
 ![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-6E8CA0)
 ![Connection](https://img.shields.io/badge/connection-LAN%20Developer%20Mode-6E8CA0)
 ![Base](https://img.shields.io/badge/fork%20of-Bambu%20Studio%20v02.08.01.55-6E8CA0)
@@ -39,9 +39,9 @@ Requires an Apple Silicon Mac. You can also build from source — see [Building]
 
 You need a way to hold a pen next to the toolhead. Recommended (this is what BambuPlotter was developed and tested with):
 
-**[A1 Plotter Module on MakerWorld](https://makerworld.com/en/models/2433877-a1-plotter-module?from=search#profileId-2737084)** — print it on your A1 mini *before* you convert it.
+**[A1 Plotter Module on MakerWorld](https://makerworld.com/en/models/2433877-a1-plotter-module?from=search#profileId-2737084)** — fits the A1 series; print it on your printer *before* you convert it.
 
-Any rigid side-mount pen holder will work — BambuPlotter doesn't assume a specific geometry. The calibration wizard measures **your** setup (paper position, safe bounds, pen heights, and the pen↔nozzle offset).
+Any rigid side-mount pen holder will work, on any Bambu Lab printer — BambuPlotter doesn't assume a specific geometry. The calibration wizard measures **your** setup (paper position, safe bounds, pen heights, and the pen↔nozzle offset).
 
 **One hard rule:** if your pen tip sits *below* the nozzle tip (most holders), **never home the printer with the pen mounted** — Z-homing presses the bed against the toolhead and would crush the pen. The workflow is always: home bare → mount pen → calibrate → plot. The wizard enforces it.
 
@@ -79,9 +79,9 @@ The calibrated paper area appears on the plate as a white sheet. Reopening the w
 
 ## Limitations
 
-- **Hardware**: developed and hardware-tested on the **A1 mini** only.
+- **Hardware**: built for Bambu Lab printers; hardware-tested on the **A1 mini** so far. Other models should work the same way (the wizard calibrates to *your* machine), but bring patience for the first supervised plot — and please report back.
 - **Platform**: builds and runs on **macOS (Apple Silicon)**; other platforms untested.
-- **Firmware preheat**: the A1 firmware preheats the nozzle to ~75 °C at job start on its own — this cannot be disabled. It's harmless with a side-mounted pen, and every job explicitly turns heaters off at the end.
+- **Firmware preheat**: Bambu firmware preheats the nozzle to ~75 °C at job start on its own — this cannot be disabled. It's harmless with a side-mounted pen, and every job explicitly turns heaters off at the end.
 - **One pen per plot**: no multi-color/multi-pen passes (yet). SVG colors are interpreted as ink (dark) vs. paper (light).
 - **Fine detail is physics-bound**: white gaps narrower than the pen tip can't survive on paper — use a finer pen for detailed line art.
 - **Preview at far zoom**: very sparse hatching can look denser than it is (sub-pixel rendering) — zoom in for the true spacing. The plotted output is always true to the data.
