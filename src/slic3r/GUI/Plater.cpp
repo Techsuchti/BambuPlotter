@@ -18851,7 +18851,7 @@ int Plater::load_project(wxString const &filename2,
             boost::system::error_code ec;
             fs::create_directories(fs::path(projects_dir), ec);
             wxFileDialog dlg(this, _L("Open plot project"), from_u8(projects_dir), "",
-                             _L("Plot project or SVG") + " (*.bplot;*.svg)|*.bplot;*.svg",
+                             _L("Plot project or artwork") + " (*.bplot;*.svg;*.png)|*.bplot;*.svg;*.png",
                              wxFD_OPEN | wxFD_FILE_MUST_EXIST);
             if (dlg.ShowModal() != wxID_OK)
                 return wxID_CANCEL;
@@ -18862,7 +18862,9 @@ int Plater::load_project(wxString const &filename2,
             return open_plotter_project(*this, into_u8(plot_filename)) ? wxID_YES : wxID_CANCEL;
         if (boost::ends_with(lower, ".svg"))
             return import_svg_as_artwork(*this, into_u8(plot_filename)) ? wxID_YES : wxID_CANCEL;
-        MessageDialog dlg(this, _L("BambuPlotter opens .bplot plot projects and imports .svg artwork."),
+        if (boost::ends_with(lower, ".png"))
+            return import_png_as_artwork(*this, into_u8(plot_filename)) ? wxID_YES : wxID_CANCEL;
+        MessageDialog dlg(this, _L("BambuPlotter opens .bplot plot projects and imports .svg or .png artwork."),
                           _L("Open project"), wxOK | wxICON_WARNING);
         dlg.ShowModal();
         return wxID_CANCEL;
@@ -21000,6 +21002,10 @@ bool Plater::load_svg(const wxArrayString &filenames, bool from_toolbar_or_file_
             // embossed 3D volume.
             import_svg_as_artwork(*this, into_u8(filename));
             return true;
+        } else if (boost::iends_with(filenames[0].ToStdString(), ".png")) {
+            // BambuPlotter: PNG line art is traced into artwork on import.
+            import_png_as_artwork(*this, into_u8(filename));
+            return true;
         } else {
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "," << __FILE__ << ",fail:" << PathSanitizer::sanitize(filename.ToUTF8().data());
         }
@@ -21013,7 +21019,8 @@ bool Plater::load_svg(const wxArrayString &filenames, bool from_toolbar_or_file_
                 deselect_all();
             }
             wxArrayString temp_filenames;
-            if (!boost::iends_with(filenames[i].ToStdString(), ".svg")) {
+            if (!boost::iends_with(filenames[i].ToStdString(), ".svg") &&
+                !boost::iends_with(filenames[i].ToStdString(), ".png")) {
                 return false;
             }
             temp_filenames.push_back(filenames[i]);
@@ -21087,11 +21094,11 @@ bool Plater::load_files(const wxArrayString& filenames)
             continue;
     }
 
-    // BambuPlotter is a plotter-only app: the plate holds SVG artwork and
-    // .bplot projects, nothing else.
+    // BambuPlotter is a plotter-only app: the plate holds SVG/PNG artwork
+    // and .bplot projects, nothing else.
     if (!normal_paths.empty() || !gcode_paths.empty()) {
         MessageDialog msg(wxGetApp().mainframe,
-                          _L("BambuPlotter plots SVG artwork. Import an .svg file (or open a .bplot project) instead."),
+                          _L("BambuPlotter plots SVG and PNG artwork. Import an .svg or .png file (or open a .bplot project) instead."),
                           _L("Unsupported file type"), wxOK | wxICON_WARNING);
         msg.ShowModal();
         return true;
@@ -21356,26 +21363,27 @@ void Plater::add_file()
     wxGetApp().import_model(this, input_files);
     if (input_files.empty()) return;
 
-    // BambuPlotter: plotter-only app — Import brings in SVG artwork, nothing
-    // else. Everything below (3MF/STL/... routing) stays for reference but
-    // is unreachable.
+    // BambuPlotter: plotter-only app — Import brings in SVG/PNG artwork,
+    // nothing else. Everything below (3MF/STL/... routing) stays for
+    // reference but is unreachable.
     {
-        wxArrayString svg_files;
+        wxArrayString artwork_files;
         bool          has_other = false;
         for (const auto &file : input_files) {
-            if (boost::iends_with(file.ToStdString(), ".svg"))
-                svg_files.push_back(file);
+            if (boost::iends_with(file.ToStdString(), ".svg") ||
+                boost::iends_with(file.ToStdString(), ".png"))
+                artwork_files.push_back(file);
             else
                 has_other = true;
         }
         if (has_other) {
             MessageDialog msg(wxGetApp().mainframe,
-                              _L("BambuPlotter plots SVG artwork. Import an .svg file (or open a .bplot project) instead."),
+                              _L("BambuPlotter plots SVG and PNG artwork. Import an .svg or .png file (or open a .bplot project) instead."),
                               _L("Unsupported file type"), wxOK | wxICON_WARNING);
             msg.ShowModal();
         }
-        if (!svg_files.empty() && load_svg(svg_files, true))
-            statistics_burial_data(svg_files[0].utf8_string());
+        if (!artwork_files.empty() && load_svg(artwork_files, true))
+            statistics_burial_data(artwork_files[0].utf8_string());
         return;
     }
 
@@ -21455,7 +21463,8 @@ void Plater::add_file()
                 return;
             }
         }
-        if (boost::iends_with(paths[0].string(), ".svg")&& load_svg(filenames)) {
+        if ((boost::iends_with(paths[0].string(), ".svg") ||
+             boost::iends_with(paths[0].string(), ".png")) && load_svg(filenames)) {
             statistics_burial_data(paths[0].string());
             return;
         }

@@ -23,6 +23,11 @@ class Plater;
 // Shows a message dialog and returns false on failure.
 bool import_svg_as_artwork(Plater &plater, const std::string &svg_path);
 
+// Imports PNG line art by tracing its ink (threshold + boundary trace) into
+// SVG markup, then continuing exactly like an SVG import - the .bplot embeds
+// the traced markup, so downstream nothing knows it was born a bitmap.
+bool import_png_as_artwork(Plater &plater, const std::string &png_path);
+
 // One artwork instance, snapshotted so a worker thread can process it
 // without touching the Model (markup + transform copies only).
 struct ArtworkSnapshot

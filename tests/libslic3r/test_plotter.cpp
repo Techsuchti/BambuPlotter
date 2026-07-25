@@ -15,7 +15,11 @@
 #include "libslic3r/Plotter/PlotterProject.hpp"
 #include "libslic3r/Plotter/PlotterSafetyValidator.hpp"
 #include "libslic3r/Plotter/PlotterToolProfile.hpp"
+#include "libslic3r/Plotter/RasterPlotImporter.hpp"
 #include "libslic3r/Plotter/SvgPlotImporter.hpp"
+#include "libslic3r/PNGReadWrite.hpp"
+
+#include <boost/filesystem.hpp>
 
 using namespace Slic3r;
 using namespace Slic3r::Plotter;
@@ -920,6 +924,102 @@ TEST_CASE("Plotter: density limiting thins fine hatching to pen scale", "[Plotte
         if (!p.closed && p.length() > 23. && get_extents({p}).max.y() < 0.5)
             longest_kept = true;
     CHECK(longest_kept);
+}
+
+TEST_CASE("Plotter: raster trace turns a bitmap disc into evenodd artwork", "[Plotter]")
+{
+    // 96x96 white canvas, black disc r=30 at the center with a white hole
+    // r=12 - the classic donut. The tracer must produce exactly two rings
+    // that survive the whole SVG fill pipeline with the hole intact.
+    const size_t         W = 96, H = 96;
+    std::vector<uint8_t> gray(W * H, 255);
+    for (size_t r = 0; r < H; ++r)
+        for (size_t c = 0; c < W; ++c) {
+            const double d2 = double(c - 48.) * (c - 48.) + double(r - 48.) * (r - 48.);
+            if (d2 <= 30. * 30. && d2 >= 12. * 12.)
+                gray[r * W + c] = 10;
+        }
+
+    const RasterTraceResult traced = trace_gray_to_svg(gray.data(), W, H);
+    REQUIRE(traced.ok);
+    CHECK(traced.ring_count == 2);
+    // Otsu's threshold belongs to the dark class: >= the ink value.
+    CHECK(traced.threshold_used >= 10);
+    CHECK(traced.threshold_used < 255);
+
+    const SvgImportResult imported = SvgPlotImporter::import_memory(traced.svg_markup);
+    REQUIRE(imported.ok);
+    CHECK(imported.paths.empty()); // fill-painted only, no stroke geometry
+    REQUIRE(imported.fill_regions.size() == 1);
+    CHECK(imported.fill_regions.front().even_odd);
+    CHECK(imported.fill_regions.front().contours.size() == 2);
+
+    // Hatch it: strokes must land in the ring, never inside the hole.
+    // Doc scale: 96 px at 96 dpi = 25.4 mm, center at (12.7, 12.7).
+    HatchParams params;
+    params.pattern = HatchPattern::Lines;
+    params.spacing = 0.5;
+    const PlotPaths hatch = hatch_fill_regions(imported.fill_regions, params);
+    REQUIRE(!hatch.empty());
+    const double px_mm = 25.4 / 96.;
+    size_t       in_ring = 0;
+    for (const PlotPath &p : hatch)
+        for (size_t i = 1; i < p.points.size(); ++i) {
+            const Vec2d  mid = (p.points[i - 1] + p.points[i]) * 0.5;
+            const double d   = (mid - Vec2d(12.7, 12.7)).norm();
+            CHECK(d > 12. * px_mm * 0.85); // clear of the hole
+            CHECK(d < 30. * px_mm * 1.15); // inside the disc
+            ++in_ring;
+        }
+    CHECK(in_ring > 10);
+}
+
+TEST_CASE("Plotter: raster trace closes ink touching the image border", "[Plotter]")
+{
+    // A full-width bar: without padding the marching squares ring would not
+    // close at the image edges.
+    const size_t         W = 48, H = 48;
+    std::vector<uint8_t> gray(W * H, 250);
+    for (size_t r = 15; r < 25; ++r)
+        for (size_t c = 0; c < W; ++c)
+            gray[r * W + c] = 0;
+
+    const RasterTraceResult traced = trace_gray_to_svg(gray.data(), W, H);
+    REQUIRE(traced.ok);
+    CHECK(traced.ring_count == 1);
+
+    const SvgImportResult imported = SvgPlotImporter::import_memory(traced.svg_markup);
+    REQUIRE(imported.ok);
+    REQUIRE(imported.fill_regions.size() == 1);
+    REQUIRE(imported.fill_regions.front().contours.size() == 1);
+    // The traced bar must span (nearly) the full image width.
+    const BoundingBoxf bb = get_extents(imported.fill_regions.front().contours);
+    CHECK(bb.size().x() > 44. * 25.4 / 96.);
+}
+
+TEST_CASE("Plotter: raster trace round-trips through a real PNG file", "[Plotter]")
+{
+    const size_t         W = 64, H = 64;
+    std::vector<uint8_t> gray(W * H, 240);
+    for (size_t r = 20; r < 44; ++r)
+        for (size_t c = 20; c < 44; ++c)
+            gray[r * W + c] = 20;
+
+    const RasterTraceResult direct = trace_gray_to_svg(gray.data(), W, H);
+    REQUIRE(direct.ok);
+    // Otsu must split the bimodal histogram between the two populations.
+    CHECK(direct.threshold_used >= 20);
+    CHECK(direct.threshold_used < 240);
+
+    const std::string png_path =
+        (boost::filesystem::temp_directory_path() / "bambuplotter_trace_test.png").string();
+    REQUIRE(png::write_gray_to_file(png_path, W, H, gray));
+    const RasterTraceResult from_file = trace_png_to_svg(png_path);
+    boost::filesystem::remove(png_path);
+    REQUIRE(from_file.ok);
+    CHECK(from_file.ring_count == direct.ring_count);
+    CHECK(from_file.width_px == W);
+    CHECK(from_file.svg_markup == direct.svg_markup);
 }
 
 TEST_CASE("Plotter: concentric hatching emits closed shrinking rings", "[Plotter]")

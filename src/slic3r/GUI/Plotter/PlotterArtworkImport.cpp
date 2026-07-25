@@ -12,6 +12,7 @@
 #include "libslic3r/Plotter/FillHatcher.hpp"
 #include "libslic3r/Plotter/PlotterProject.hpp"
 #include "libslic3r/Plotter/PlotterToolProfile.hpp"
+#include "libslic3r/Plotter/RasterPlotImporter.hpp"
 #include "libslic3r/Plotter/SvgPlotImporter.hpp"
 
 #include "slic3r/GUI/GLCanvas3D.hpp"
@@ -40,30 +41,17 @@ bool model_has_artwork(const Model &model)
 
 void show_import_error(const wxString &message)
 {
-    MessageDialog dlg(wxGetApp().mainframe, message, _L("Import SVG artwork"), wxOK | wxICON_WARNING);
+    MessageDialog dlg(wxGetApp().mainframe, message, _L("Import artwork"), wxOK | wxICON_WARNING);
     dlg.ShowModal();
 }
 
-} // namespace
-
-bool import_svg_as_artwork(Plater &plater, const std::string &svg_path)
+// Common tail of every artwork import: the info's embedded markup becomes a
+// plate object (display mesh, paper fit, placement, snapshot).
+bool finish_artwork_import(Plater &plater, ArtworkInfo &&info, const std::string &source_path)
 {
-    // Embed the markup so the .bplot project stays portable.
-    std::ifstream in(svg_path, std::ios::binary);
-    if (!in) {
-        show_import_error(_L("Cannot open SVG file:") + " " + from_u8(svg_path));
-        return false;
-    }
-    std::stringstream markup;
-    markup << in.rdbuf();
-
-    ArtworkInfo info;
-    info.source_svg_path = svg_path;
-    info.svg_markup      = markup.str();
-
     const SvgImportResult imported = SvgPlotImporter::import_memory(info.svg_markup, info.options);
     if (!imported.ok) {
-        show_import_error(_L("No plottable strokes found in the SVG:") + " " + from_u8(imported.error));
+        show_import_error(_L("No plottable strokes found in the artwork:") + " " + from_u8(imported.error));
         return false;
     }
     info.doc_width  = imported.width;
@@ -74,7 +62,7 @@ bool import_svg_as_artwork(Plater &plater, const std::string &svg_path)
     for (const SvgFillRegion &region : imported.fill_regions)
         display.insert(display.end(), region.contours.begin(), region.contours.end());
     if (display.empty()) {
-        show_import_error(_L("No plottable strokes found in the SVG:") + " " + _L("empty document"));
+        show_import_error(_L("No plottable strokes found in the artwork:") + " " + _L("empty document"));
         return false;
     }
 
@@ -91,7 +79,7 @@ bool import_svg_as_artwork(Plater &plater, const std::string &svg_path)
         mesh_params.stroke_width = profile.pen_tip_width;
     const TriangleMesh mesh(artwork_mesh(display, info.pivot, mesh_params));
     if (mesh.empty()) {
-        show_import_error(_L("The SVG produced no drawable geometry."));
+        show_import_error(_L("The artwork produced no drawable geometry."));
         return false;
     }
     const BoundingBoxf paper = profile.is_valid() ?
@@ -119,11 +107,47 @@ bool import_svg_as_artwork(Plater &plater, const std::string &svg_path)
         position.y() = std::clamp(position.y(), paper.min.y() + scaled_half.y(), paper.max.y() - scaled_half.y());
     }
 
-    const wxString name = from_u8(boost::filesystem::path(svg_path).stem().string());
+    const wxString name = from_u8(boost::filesystem::path(source_path).stem().string());
 
-    Plater::TakeSnapshot snapshot(&plater, "Import SVG artwork");
+    Plater::TakeSnapshot snapshot(&plater, "Import artwork");
     wxGetApp().obj_list()->load_artwork_object(mesh, name, info, position, s0);
     return true;
+}
+
+} // namespace
+
+bool import_svg_as_artwork(Plater &plater, const std::string &svg_path)
+{
+    // Embed the markup so the .bplot project stays portable.
+    std::ifstream in(svg_path, std::ios::binary);
+    if (!in) {
+        show_import_error(_L("Cannot open SVG file:") + " " + from_u8(svg_path));
+        return false;
+    }
+    std::stringstream markup;
+    markup << in.rdbuf();
+
+    ArtworkInfo info;
+    info.source_svg_path = svg_path;
+    info.svg_markup      = markup.str();
+    return finish_artwork_import(plater, std::move(info), svg_path);
+}
+
+bool import_png_as_artwork(Plater &plater, const std::string &png_path)
+{
+    // Trace the bitmap's ink into an even-odd SVG document; from here on a
+    // PNG-born artwork is indistinguishable from an imported SVG (.bplot
+    // embeds the traced markup, the fill pipeline applies unchanged).
+    const RasterTraceResult traced = trace_png_to_svg(png_path);
+    if (!traced.ok) {
+        show_import_error(_L("Could not trace the image into pen artwork:") + " " + from_u8(traced.error));
+        return false;
+    }
+
+    ArtworkInfo info;
+    info.source_svg_path = png_path;
+    info.svg_markup      = traced.svg_markup;
+    return finish_artwork_import(plater, std::move(info), png_path);
 }
 
 std::vector<ArtworkSnapshot> collect_artwork_snapshots(const Model &model, std::string *error)

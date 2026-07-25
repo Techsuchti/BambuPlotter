@@ -300,6 +300,8 @@ set(lisbslic3r_sources
     Plotter/PlotterPath.hpp
     Plotter/PlotterProject.cpp
     Plotter/PlotterProject.hpp
+    Plotter/RasterPlotImporter.cpp
+    Plotter/RasterPlotImporter.hpp
     Plotter/PlotterSafetyValidator.cpp
     Plotter/PlotterSafetyValidator.hpp
     Plotter/PlotterToolProfile.cpp

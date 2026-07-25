@@ -7,11 +7,12 @@
 ![Connection](https://img.shields.io/badge/connection-LAN%20Developer%20Mode-6E8CA0)
 ![Base](https://img.shields.io/badge/fork%20of-Bambu%20Studio%20v02.08.01.55-6E8CA0)
 
-BambuPlotter is a fork of [Bambu Studio](https://github.com/bambulab/BambuStudio) that replaces the 3D-printing workflow with a **plotter-first** one: import an SVG, place it on the plate with the native gizmos, hit **Generate plot**, preview the pen paths as ink on paper, and **Send plot** — your printer draws it with a real pen, standalone, and hands you the sheet when it's done.
+BambuPlotter is a fork of [Bambu Studio](https://github.com/bambulab/BambuStudio) that replaces the 3D-printing workflow with a **plotter-first** one: import an SVG or PNG, place it on the plate with the native gizmos, hit **Generate plot**, preview the pen paths as ink on paper, and **Send plot** — your printer draws it with a real pen, standalone, and hands you the sheet when it's done.
 
 This is not an app inside another app. It *is* Bambu Studio's workflow — just for pens instead of nozzles.
 
-- **Faithful SVG plotting** — strokes, solid fills (hatched to your pen's tip width, `Lines` or `Concentric` patterns), painter's-order color handling (light shapes erase, like the original artwork renders), and single centerline strokes for lines thinner than the pen.
+- **Faithful SVG plotting** — strokes, solid fills (hatched to your pen's tip width, `Lines` or `Concentric` patterns), painter's-order color handling (light shapes erase, like the original artwork renders), single centerline strokes for lines thinner than the pen, and automatic stroke-density limiting so fine artwork stays tonal instead of fusing into solid black.
+- **PNG line art import** — bitmaps are traced in-app (automatic threshold, boundary tracing) into the same artwork pipeline; no external vectorizer needed.
 - **Native experience** — artwork is a real plate object: drag, rotate, scale with the standard toolbar and gizmos. The Preview tab shows the plot like a sliced print — black ink on a white paper sheet — with time estimation and travel moves.
 - **Safety by construction** — jobs are movement-only G-code (no heating, no extrusion, no homing), checked by a default-deny validator against your calibrated bounds before anything is sent.
 - **Projects** — save/open `.bplot` files carrying your artwork (SVG embedded), placements, and pen/fill settings. Machine calibration never travels with a project.
@@ -51,7 +52,7 @@ The calibrated paper area appears on the plate as a white sheet. Reopening the w
 
 ## Step 3 — Plot
 
-1. **Import an SVG** (File → Import, drag & drop, or the toolbar). It lands on the paper as a real object — move, rotate, scale it like any model.
+1. **Import an SVG or PNG** (File → Import, drag & drop, or the toolbar). PNG line art is traced into pen artwork on import. It lands on the paper as a real object — move, rotate, scale it like any model.
 2. Tune **Pen** (tip width, speeds) and **Fill** (hatching on/off, pattern, spacing × tip width, angle) in the sidebar. Tip width drives hatch density — a 0.5 mm pen fills denser than a 0.8 mm one.
 3. **Generate plot** — the plotter's "slice". The Preview shows ink on paper with stroke count, drawing/travel length, and a time estimate. Moving anything makes the plot stale until you regenerate — the printer always runs exactly what you previewed.
 4. **Send plot** — confirm, and the job uploads and starts. The printer runs it standalone (you can disconnect). At the end, the pen lifts and the bed slides forward to present the sheet. Heaters are commanded off at the end of every job.
