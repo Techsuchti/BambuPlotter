@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="resources/images/BambuStudio_192px.png" alt="BambuPlotter icon" width="96"/>
+</p>
+
 # BambuPlotter
 
 **Turn your Bambu Lab A1 mini into a pen plotter — with the exact experience of preparing a print in Bambu Studio.**
@@ -18,6 +22,16 @@ This is not an app inside another app. It *is* Bambu Studio's workflow — just 
 - **Projects** — save/open `.bplot` files carrying your artwork (SVG embedded), placements, and pen/fill settings. Machine calibration never travels with a project.
 
 > **Unofficial software.** Not affiliated with Bambu Lab. You are driving real hardware with a modified tool — supervise your first plots and use at your own risk.
+
+## Download
+
+Grab the latest `BambuPlotter-<version>-macos-arm64.dmg` from the [Releases page](https://github.com/danieloquelis/BambuPlotter/releases), drag the app into Applications, then clear the quarantine flag once — builds are not notarized with Apple, so macOS refuses to open them otherwise:
+
+```bash
+xattr -cr /Applications/BambuPlotter.app
+```
+
+Requires an Apple Silicon Mac. You can also build from source — see [Building](#building).
 
 ---
 

@@ -1,0 +1,86 @@
+# BambuPlotter release pipeline: push a tag like v0.1.0 (or run manually)
+# and this builds the macOS Apple Silicon app, packs it into a DMG and
+# attaches it to the GitHub Release for that tag.
+#
+# Tool pins (Xcode 15.4, CMake 3.31, single-purpose brew packages) mirror
+# upstream Bambu Studio CI - newer CMake breaks the build. The dependency
+# tree is cached; the first run builds it (~hours), later runs reuse it.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 15.4, free disk space
+        run: |
+          sudo find /Applications -maxdepth 1 -type d -name "Xcode_*.app" ! -name "Xcode_15.4.app" -exec rm -rf {} +
+          sudo xcode-select -s /Applications/Xcode_15.4.app
+          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches/*
+          df -h
+
+      - name: Pin build tools (upstream-tested versions)
+        run: |
+          brew install ninja automake texinfo nasm yasm x264
+          brew unlink cmake || true
+          brew tap-new $USER/old-cmake
+          brew extract --version=3.31.0 cmake $USER/old-cmake
+          brew install $USER/old-cmake/cmake@3.31.0
+          brew link --overwrite cmake@3.31.0
+          brew pin cmake@3.31.0
+
+      - name: Restore dependency cache
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: deps/build/arm64/BambuStudio_deps
+          key: deps-macos-arm64-${{ hashFiles('deps/**/*.cmake', 'deps/**/CMakeLists.txt', 'deps/**/*.patch') }}
+
+      - name: Build dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          brew uninstall --ignore-dependencies zstd || true
+          CMAKE_BUILD_PARALLEL_LEVEL=3 ./BuildMac.sh -d -x -a arm64 -t 10.15
+          (cd deps/build/arm64 && find . -mindepth 1 -maxdepth 1 ! -name 'BambuStudio_deps' -exec rm -rf {} +)
+          brew install zstd
+
+      - name: Build BambuPlotter
+        run: CMAKE_BUILD_PARALLEL_LEVEL=3 ./BuildMac.sh -s -x -a arm64 -t 10.15
+
+      - name: Run engine tests
+        run: |
+          cmake --build build/arm64 --target plotter_tests
+          ./build/arm64/tests/libslic3r/plotter_tests.app/Contents/MacOS/plotter_tests
+
+      - name: Package DMG
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          STAGE=$(mktemp -d)
+          cp -pR build/arm64/BambuStudio/BambuPlotter.app "$STAGE/BambuPlotter.app"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "BambuPlotter" -srcfolder "$STAGE" -ov -format UDZO \
+            "BambuPlotter-${VERSION}-macos-arm64.dmg"
+          shasum -a 256 BambuPlotter-*.dmg
+
+      - name: Attach DMG to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: BambuPlotter-*.dmg
+
+      - name: Upload artifact (manual runs)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: BambuPlotter-macos-arm64
+          path: BambuPlotter-*.dmg
