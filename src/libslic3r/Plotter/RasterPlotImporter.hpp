@@ -34,6 +34,12 @@ struct RasterTraceResult
     size_t      height_px = 0;
     int         threshold_used = 0;
     size_t      ring_count = 0; // boundary rings in the markup
+    // Light-on-dark art (scratchboard, chalk, negatives): when the dark
+    // side of the threshold covers most of the image, the LIGHT strokes
+    // are the drawing and get traced instead - a pen cannot "plot" a
+    // black background, and hatching one page-sized region with tens of
+    // thousands of hairline holes runs practically forever.
+    bool        inverted = false;
 };
 
 // Core tracer over an 8-bit grayscale buffer (row major, `cols` wide).

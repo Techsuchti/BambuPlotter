@@ -170,17 +170,28 @@ RasterTraceResult trace_gray_to_svg(const uint8_t *gray, size_t cols, size_t row
     std::vector<uint8_t> pixels(gray, gray + cols * rows);
     res.threshold_used = options.threshold >= 0 ? std::min(options.threshold, 255) : otsu_threshold(pixels);
 
+    // Which side of the threshold is the drawing? Dark strokes on light
+    // paper normally - but when the dark side covers most of the image
+    // (scratchboard / negative art), the light strokes are the drawing.
+    size_t dark_px = 0;
+    for (uint8_t v : pixels)
+        if (v <= res.threshold_used)
+            ++dark_px;
+    res.inverted = dark_px * 2 > pixels.size();
+
     RasterInkGrid grid;
     grid.cols = cols + 2;
     grid.rows = rows + 2;
     grid.cells.assign(grid.cols * grid.rows, 0);
     size_t ink_px = 0;
     for (size_t r = 0; r < rows; ++r)
-        for (size_t c = 0; c < cols; ++c)
-            if (pixels[r * cols + c] <= res.threshold_used) {
+        for (size_t c = 0; c < cols; ++c) {
+            const bool dark = pixels[r * cols + c] <= res.threshold_used;
+            if (dark != res.inverted) {
                 grid.cells[(r + 1) * grid.cols + (c + 1)] = 255;
                 ++ink_px;
             }
+        }
     if (ink_px == 0) {
         res.error = "no ink found - the image has no pixels darker than the threshold";
         return res;

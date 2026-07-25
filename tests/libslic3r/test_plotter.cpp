@@ -997,6 +997,34 @@ TEST_CASE("Plotter: raster trace closes ink touching the image border", "[Plotte
     CHECK(bb.size().x() > 44. * 25.4 / 96.);
 }
 
+TEST_CASE("Plotter: raster trace inverts light-on-dark art", "[Plotter]")
+{
+    // Scratchboard polarity: a light stroke on a dark canvas. The drawing
+    // is the stroke - tracing the background as ink would mean "flood the
+    // page" and a practically endless hatch job.
+    const size_t         W = 96, H = 96;
+    std::vector<uint8_t> dark_bg(W * H, 20);
+    for (size_t r = 40; r < 47; ++r)
+        for (size_t c = 10; c < 86; ++c)
+            dark_bg[r * W + c] = 230;
+
+    const RasterTraceResult neg = trace_gray_to_svg(dark_bg.data(), W, H);
+    REQUIRE(neg.ok);
+    CHECK(neg.inverted);
+    CHECK(neg.ring_count == 1);
+
+    // The same stroke in normal polarity must trace identically.
+    std::vector<uint8_t> light_bg(W * H, 230);
+    for (size_t r = 40; r < 47; ++r)
+        for (size_t c = 10; c < 86; ++c)
+            light_bg[r * W + c] = 20;
+    const RasterTraceResult pos = trace_gray_to_svg(light_bg.data(), W, H);
+    REQUIRE(pos.ok);
+    CHECK_FALSE(pos.inverted);
+    CHECK(pos.ring_count == 1);
+    CHECK(pos.svg_markup == neg.svg_markup);
+}
+
 TEST_CASE("Plotter: raster trace round-trips through a real PNG file", "[Plotter]")
 {
     const size_t         W = 64, H = 64;
