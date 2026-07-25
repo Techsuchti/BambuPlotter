@@ -535,11 +535,15 @@ PlotPaths plot_fill_regions(const std::vector<SvgFillRegion> &regions, const Hat
 
     // Thin parts: one stroke down the middle - the pen's own width renders
     // the artist's tapering lines instead of two overlapping outlines.
-    // Split the thin ink between the exact medial axis (highest quality,
-    // real cost per piece) and the shared raster skeleton (linear time).
-    // Individual monsters (crosshatch webs full of holes) always go to the
-    // raster; and when the ink is thousands of slivers whose exact-medial
-    // calls would SUM to minutes, the whole set goes raster too.
+    // Split the thin ink between the exact medial axis (highest quality)
+    // and the shared raster skeleton (linear time, unconditionally robust).
+    // The exact path uses boost's Voronoi, which is BOTH slow in aggregate
+    // over thousands of slivers AND can spin near-forever on degenerate
+    // lattice geometry (raster-traced staircases, collinear runs) - one
+    // such call pinned the app at 100% CPU for minutes on a piece that
+    // passed generous size gates. So: exact medial only for small, simple
+    // pieces, pre-simplified to strip lattice degeneracies; everything
+    // else - and everything, when the set is large - goes raster.
     PlotPaths centers;
     std::vector<const ExPolygon *> webs;
     std::vector<const ExPolygon *> strokes;
@@ -548,26 +552,28 @@ PlotPaths plot_fill_regions(const std::vector<SvgFillRegion> &regions, const Hat
         size_t npts = ex.contour.points.size();
         for (const Polygon &h : ex.holes)
             npts += h.points.size();
-        if (npts > 2000 || ex.holes.size() > 30) {
+        if (npts > 600 || ex.holes.size() > 8) {
             webs.push_back(&ex);
         } else {
             stroke_pts += npts;
             strokes.push_back(&ex);
         }
     }
-    if (stroke_pts > 30000) {
+    if (stroke_pts > 8000) {
         webs.insert(webs.end(), strokes.begin(), strokes.end());
         strokes.clear();
     }
     for (const ExPolygon *ex : strokes) {
-        Polylines centerlines;
-        ex->medial_axis(scale_(0.02), scale_(2.0 * 1.2 * std::max(params.pen_width, 0.05)), &centerlines);
-        for (const Polyline &pl : centerlines) {
-            std::vector<Vec2d> pts;
-            pts.reserve(pl.points.size());
-            for (const Point &pt : pl.points)
-                pts.emplace_back(unscale(pt));
-            append_plot_path(centers, std::move(pts), false, params.min_length);
+        for (const ExPolygon &simple : ex->simplify(scale_(0.01))) {
+            Polylines centerlines;
+            simple.medial_axis(scale_(0.02), scale_(2.0 * 1.2 * std::max(params.pen_width, 0.05)), &centerlines);
+            for (const Polyline &pl : centerlines) {
+                std::vector<Vec2d> pts;
+                pts.reserve(pl.points.size());
+                for (const Point &pt : pl.points)
+                    pts.emplace_back(unscale(pt));
+                append_plot_path(centers, std::move(pts), false, params.min_length);
+            }
         }
     }
     if (!webs.empty())

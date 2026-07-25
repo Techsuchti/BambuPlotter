@@ -20322,10 +20322,19 @@ void Plater::generate_plot()
     const std::string gcode_path = (fs::path(data_dir()) / "plotter" / "preview.gcode").string();
 
     std::thread([snapshots = std::move(snapshots), profile, gcode_path]() mutable {
+        // Phase timings on stderr: invisible in normal app use, and the
+        // studio log is encrypted - launch the raw binary from a terminal
+        // to see where a slow Generate actually spends its time.
+        auto plotter_tick = [] { return std::chrono::steady_clock::now(); };
+        auto plotter_ms   = [](auto a, auto b) { return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count(); };
+        auto t_start = plotter_tick();
 
         auto out = std::make_shared<PlotterController::GenerateOutput>();
         std::string paths_error;
         Plotter::PlotPaths paths = paper_paths_from_snapshots(snapshots, profile, &paths_error);
+        auto t_plan = plotter_tick();
+        fprintf(stderr, "[plotter] plan: %zu artworks -> %zu paths in %lld ms\n",
+                snapshots.size(), paths.size(), plotter_ms(t_start, t_plan));
         if (paths.empty()) {
             out->error = paths_error.empty() ? std::string("nothing to plot") : paths_error;
         } else {
@@ -20334,6 +20343,9 @@ void Plater::generate_plot()
             job.profile = profile;
             *out = PlotterController::run_generate(std::move(job));
         }
+        auto t_gcode = plotter_tick();
+        fprintf(stderr, "[plotter] order+gcode: %lld ms (draw %.1f m, travel %.1f m)\n",
+                plotter_ms(t_plan, t_gcode), out->draw_length / 1000., out->travel_length / 1000.);
         auto processed     = std::make_shared<GCodeProcessorResult>();
         auto render_config = std::make_shared<DynamicConfig>();
         if (out->ok) {
@@ -20358,6 +20370,9 @@ void Plater::generate_plot()
                 }
             }
         }
+        fprintf(stderr, "[plotter] preview-process: %lld ms | total %lld ms | ok=%d %s\n",
+                plotter_ms(t_gcode, plotter_tick()), plotter_ms(t_start, plotter_tick()),
+                int(out->ok), out->error.c_str());
         wxGetApp().CallAfter([out, processed, render_config]() {
             Plater *plater = wxGetApp().plater();
             if (plater != nullptr)

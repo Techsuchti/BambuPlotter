@@ -1,6 +1,8 @@
 #include "PlotterArtworkImport.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 
@@ -202,7 +204,12 @@ PlotPaths paper_paths_from_snapshots(const std::vector<ArtworkSnapshot> &snapsho
                 hatch_params.inset     = 0.5 * profile.pen_tip_width / world_scale;
                 hatch_params.pen_width = profile.pen_tip_width / world_scale;
                 hatch_params.min_length = hatch_params.min_length / world_scale;
+                const auto t_fill = std::chrono::steady_clock::now();
                 PlotPaths fill = plot_fill_regions(imported.fill_regions, hatch_params);
+                fprintf(stderr, "[plotter]   '%s': scale %.3f, %zu regions -> %zu fill paths in %lld ms\n",
+                        snap.name.c_str(), world_scale, imported.fill_regions.size(), fill.size(),
+                        (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t_fill).count());
                 doc.insert(doc.end(), std::make_move_iterator(fill.begin()),
                            std::make_move_iterator(fill.end()));
             } else {
