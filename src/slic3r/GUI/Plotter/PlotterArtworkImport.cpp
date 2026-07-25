@@ -184,16 +184,24 @@ PlotPaths paper_paths_from_snapshots(const std::vector<ArtworkSnapshot> &snapsho
         std::string import_error;
         SvgImportResult imported = snap.info.import_result(&import_error);
         PlotPaths doc = std::move(imported.paths); // stroke-painted shapes
-        if (!imported.fill_regions.empty()) {
+        // The fill plan is computed in DOC space but drawn after the
+        // artwork's world transform (uniform scale by construction): a pen
+        // dimension of X mm on paper is X/s mm in doc units. Without this
+        // a scaled-down artwork hatches denser than the pen on paper
+        // (over-inking) and costs far more to compute - a fit-down of 0.4x
+        // once turned a 2 s plan into minutes.
+        const double world_scale = (snap.world.linear() * Vec3d(1., 0., 0.)).norm();
+        if (!imported.fill_regions.empty() && world_scale > 1e-6) {
             if (profile.fill_enabled) {
                 // Full fill plan: composed-ink outlines + hatch +
                 // centerlines for thin parts.
                 HatchParams hatch_params;
                 hatch_params.pattern   = profile.hatch_pattern == 1 ? HatchPattern::Concentric : HatchPattern::Lines;
-                hatch_params.spacing   = profile.hatch_spacing();
+                hatch_params.spacing   = profile.hatch_spacing() / world_scale;
                 hatch_params.angle_deg = profile.hatch_angle;
-                hatch_params.inset     = 0.5 * profile.pen_tip_width;
-                hatch_params.pen_width = profile.pen_tip_width;
+                hatch_params.inset     = 0.5 * profile.pen_tip_width / world_scale;
+                hatch_params.pen_width = profile.pen_tip_width / world_scale;
+                hatch_params.min_length = hatch_params.min_length / world_scale;
                 PlotPaths fill = plot_fill_regions(imported.fill_regions, hatch_params);
                 doc.insert(doc.end(), std::make_move_iterator(fill.begin()),
                            std::make_move_iterator(fill.end()));
