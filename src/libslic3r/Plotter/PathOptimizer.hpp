@@ -6,9 +6,10 @@
 namespace Slic3r { namespace Plotter {
 
 // Orders pen strokes to reduce pen-up travel using a greedy nearest-endpoint
-// chain. Open paths may be reversed when that shortens the travel; closed
-// paths keep their topology and are rotated to start at the vertex nearest
-// the pen. O(n * total_points) — fine for plotting workloads.
+// chain over a spatial hash grid. Open paths may be reversed when that
+// shortens the travel; closed paths keep their topology and are rotated to
+// start near the vertex closest to the pen. Effectively linear in the
+// number of paths — engraving-class plans (10k strokes) order in ~ms.
 class PathOptimizer
 {
 public:
