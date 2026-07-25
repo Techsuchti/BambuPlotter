@@ -22,10 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 15.4, free disk space
+      - name: Select newest installed Xcode, free disk space
         run: |
-          sudo find /Applications -maxdepth 1 -type d -name "Xcode_*.app" ! -name "Xcode_15.4.app" -exec rm -rf {} +
-          sudo xcode-select -s /Applications/Xcode_15.4.app
+          # Runner images rotate Xcode versions - pin dynamically to the
+          # newest one actually present (a hardcoded 15.4 died when the
+          # image dropped it, deleting every Xcode in the process).
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using $XCODE"
+          sudo find /Applications -maxdepth 1 -type d -name "Xcode_*.app" ! -path "$XCODE" -exec rm -rf {} +
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
           sudo rm -rf ~/Library/Developer/CoreSimulator/Caches/*
           df -h
 
