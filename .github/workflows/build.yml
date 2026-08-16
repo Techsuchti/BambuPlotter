@@ -19,14 +19,14 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          .\vcpkg\vcpkg install pkgconf glew wxwidgets opencv curl zlib tbb boost-system boost-filesystem boost-thread boost-log boost-locale boost-regex boost-chrono boost-atomic boost-date-time boost-iostreams --triplet x64-windows
+          .\vcpkg\vcpkg install pkgconf glew glfw3 wxwidgets opencv curl zlib tbb boost-system boost-filesystem boost-thread boost-log boost-locale boost-regex boost-chrono boost-atomic boost-date-time boost-iostreams --triplet x64-windows
 
       - name: Configure CMake
         run: |
           mkdir build
           cd build
           $env:CMAKE_TOOLCHAIN_FILE = "../vcpkg/scripts/buildsystems/vcpkg.cmake"
-          cmake .. -A x64
+          cmake .. -A x64 -DGLEW_USE_STATIC_LIBS=ON
 
       - name: Build
         run: |
