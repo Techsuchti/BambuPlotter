@@ -19,7 +19,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          .\vcpkg\vcpkg install pkgconf wxwidgets opencv curl zlib boost-system boost-filesystem boost-thread boost-log boost-locale boost-regex boost-chrono boost-atomic boost-date-time boost-iostreams --triplet x64-windows
+          .\vcpkg\vcpkg install pkgconf wxwidgets opencv curl zlib tbb boost-system boost-filesystem boost-thread boost-log boost-locale boost-regex boost-chrono boost-atomic boost-date-time boost-iostreams --triplet x64-windows
 
       - name: Configure CMake
         run: |
