@@ -19,15 +19,14 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          .\vcpkg\vcpkg install pkgconf wxwidgets opencv curl zlib --triplet x64-windows
+          .\vcpkg\vcpkg install pkgconf wxwidgets opencv curl zlib boost-system boost-filesystem boost-thread boost-log boost-locale boost-regex boost-chrono boost-atomic boost-date-time boost-iostreams --triplet x64-windows
 
       - name: Configure CMake
         run: |
           mkdir build
           cd build
-          # Wir setzen PkgConfig_FOUND auf TRUE, um den fehlerhaften System-Check zu überspringen
           $env:CMAKE_TOOLCHAIN_FILE = "../vcpkg/scripts/buildsystems/vcpkg.cmake"
-          cmake .. -A x64 -DPkgConfig_FOUND=TRUE -DPKG_CONFIG_EXECUTABLE="C:/github/workspace/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe"
+          cmake .. -A x64
 
       - name: Build
         run: |
