@@ -25,8 +25,9 @@ jobs:
         run: |
           mkdir build
           cd build
+          # Wir setzen PkgConfig_FOUND auf TRUE, um den fehlerhaften System-Check zu überspringen
           $env:CMAKE_TOOLCHAIN_FILE = "../vcpkg/scripts/buildsystems/vcpkg.cmake"
-          cmake .. -A x64
+          cmake .. -A x64 -DPkgConfig_FOUND=TRUE -DPKG_CONFIG_EXECUTABLE="C:/github/workspace/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe"
 
       - name: Build
         run: |
