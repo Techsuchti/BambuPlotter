@@ -25,7 +25,8 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -A x64
+          $env:CMAKE_TOOLCHAIN_FILE = "../vcpkg/scripts/buildsystems/vcpkg.cmake"
+          cmake .. -A x64
 
       - name: Build
         run: |
