@@ -1,40 +1,198 @@
+```yaml
 name: Windows Build
+
 on:
   push:
-    branches: [ master, main ]
+    branches:
+      - master
+      - main
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build BambuPlotter
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
+      # --------------------------------------------------
+      # Checkout
+      # --------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
+      # --------------------------------------------------
+      # Install vcpkg
+      # --------------------------------------------------
       - name: Install vcpkg
+        shell: pwsh
         run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          .\vcpkg\bootstrap-vcpkg.bat
+          git clone https://github.com/microsoft/vcpkg.git "$env:GITHUB_WORKSPACE\vcpkg"
 
-      - name: Install Dependencies
+          & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat" `
+            -disableMetrics
+
+          echo "VCPKG_ROOT=$env:GITHUB_WORKSPACE\vcpkg" >> $env:GITHUB_ENV
+
+      # --------------------------------------------------
+      # Install dependencies
+      # --------------------------------------------------
+      - name: Install dependencies
+        shell: pwsh
         run: |
-          .\vcpkg\vcpkg install pkgconf glew glfw3 cereal wxwidgets opencv curl zlib tbb boost-system boost-filesystem boost-thread boost-log boost-locale boost-regex boost-chrono boost-atomic boost-date-time boost-iostreams --triplet x64-windows
+          $vcpkg = "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe"
 
+          & $vcpkg install `
+            pkgconf:x64-windows `
+            glfw3:x64-windows `
+            glew:x64-windows `
+            cereal:x64-windows `
+            nlopt:x64-windows `
+            wxwidgets:x64-windows `
+            opencv:x64-windows `
+            curl:x64-windows `
+            zlib:x64-windows `
+            tbb:x64-windows `
+            boost-system:x64-windows `
+            boost-filesystem:x64-windows `
+            boost-thread:x64-windows `
+            boost-log:x64-windows `
+            boost-locale:x64-windows `
+            boost-regex:x64-windows `
+            boost-chrono:x64-windows `
+            boost-atomic:x64-windows `
+            boost-date-time:x64-windows `
+            boost-iostreams:x64-windows
+
+      # --------------------------------------------------
+      # Verify NLopt
+      # --------------------------------------------------
+      - name: Verify NLopt
+        shell: pwsh
+        run: |
+          $include = "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows\include"
+          $lib = "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows\lib"
+
+          Write-Host "NLopt headers:"
+          Get-ChildItem $include -Filter "nlopt*" -ErrorAction SilentlyContinue
+
+          Write-Host ""
+          Write-Host "NLopt libraries:"
+          Get-ChildItem $lib -Filter "*nlopt*" -ErrorAction SilentlyContinue
+
+          if (!(Test-Path "$include\nlopt.hpp")) {
+            Write-Error "nlopt.hpp was not found!"
+            exit 1
+          }
+
+          Write-Host "nlopt.hpp found."
+
+      # --------------------------------------------------
+      # Verify GLEW
+      # --------------------------------------------------
+      - name: Verify GLEW
+        shell: pwsh
+        run: |
+          $include = "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows\include"
+          $lib = "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows\lib"
+
+          Write-Host "GLEW headers:"
+          Get-ChildItem "$include\GL" -ErrorAction SilentlyContinue
+
+          Write-Host ""
+          Write-Host "GLEW libraries:"
+          Get-ChildItem $lib -Filter "*GLEW*" -ErrorAction SilentlyContinue
+
+      # --------------------------------------------------
+      # Configure CMake
+      # --------------------------------------------------
       - name: Configure CMake
+        shell: pwsh
         run: |
-          mkdir build
-          cd build
-          $env:CMAKE_TOOLCHAIN_FILE = "../vcpkg/scripts/buildsystems/vcpkg.cmake"
-          cmake .. -A x64 -DGLEW_USE_STATIC_LIBS=ON
+          if (Test-Path "$env:GITHUB_WORKSPACE\build") {
+            Remove-Item "$env:GITHUB_WORKSPACE\build" -Recurse -Force
+          }
 
+          cmake `
+            -S "$env:GITHUB_WORKSPACE" `
+            -B "$env:GITHUB_WORKSPACE\build" `
+            -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DSLIC3R_GUI=ON `
+            -DSLIC3R_STATIC=ON `
+            -DSLIC3R_BUILD_TESTS=OFF `
+            -DSLIC3R_BUILD_SANDBOXES=OFF `
+            -DSLIC3R_ASAN=OFF
+
+      # --------------------------------------------------
+      # Build
+      # --------------------------------------------------
       - name: Build
+        shell: pwsh
         run: |
-          cd build
-          cmake --build . --config Release
+          cmake `
+            --build "$env:GITHUB_WORKSPACE\build" `
+            --config Release `
+            --parallel
 
-      - name: Upload Artifact
+      # --------------------------------------------------
+      # Locate executable
+      # --------------------------------------------------
+      - name: Locate BambuPlotter.exe
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem `
+            "$env:GITHUB_WORKSPACE\build" `
+            -Recurse `
+            -Filter "BambuPlotter.exe" `
+            -ErrorAction SilentlyContinue
+
+          if ($null -eq $exe) {
+            Write-Error "BambuPlotter.exe was not found."
+            exit 1
+          }
+
+          foreach ($file in $exe) {
+            Write-Host "Found:"
+            Write-Host $file.FullName
+          }
+
+      # --------------------------------------------------
+      # Package
+      # --------------------------------------------------
+      - name: Package
+        shell: pwsh
+        run: |
+          $package = "$env:GITHUB_WORKSPACE\BambuPlotter-Windows"
+
+          if (Test-Path $package) {
+            Remove-Item $package -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $package | Out-Null
+
+          $exe = Get-ChildItem `
+            "$env:GITHUB_WORKSPACE\build" `
+            -Recurse `
+            -Filter "BambuPlotter.exe" `
+            -ErrorAction Stop |
+            Select-Object -First 1
+
+          Copy-Item $exe.FullName "$package\BambuPlotter.exe"
+
+          Write-Host "Package:"
+          Get-ChildItem $package
+
+      # --------------------------------------------------
+      # Upload
+      # --------------------------------------------------
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: BambuPlotter-Windows
-          path: build/Release/BambuPlotter.exe
+          path: BambuPlotter-Windows
+          if-no-files-found: error
+```
