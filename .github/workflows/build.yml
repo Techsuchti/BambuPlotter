@@ -142,4 +142,3 @@ jobs:
           name: BambuPlotter-Windows
           path: BambuPlotter-Windows
           if-no-files-found: error
-```
