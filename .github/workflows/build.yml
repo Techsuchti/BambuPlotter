@@ -31,7 +31,9 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         run: |
-          & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install `
+          $vcpkg = "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe"
+
+          & $vcpkg install `
             pkgconf:x64-windows `
             glfw3:x64-windows `
             glew:x64-windows `
@@ -51,7 +53,9 @@ jobs:
             boost-chrono:x64-windows `
             boost-atomic:x64-windows `
             boost-date-time:x64-windows `
-            boost-iostreams:x64-windows
+            boost-iostreams:x64-windows `
+            imath:x64-windows `
+            openvdb:x64-windows
 
       - name: Check dependencies
         shell: pwsh
@@ -63,7 +67,6 @@ jobs:
             Write-Error "nlopt.hpp not found"
             exit 1
           }
-
           Write-Host "NLopt OK"
 
           Write-Host "Checking GLEW..."
@@ -71,8 +74,29 @@ jobs:
             Write-Error "glew.h not found"
             exit 1
           }
+          Write-Host "GLEW headers OK"
 
-          Write-Host "GLEW OK"
+          Write-Host "Checking OpenVDB..."
+          if (!(Test-Path "$root\include\openvdb")) {
+            Write-Error "OpenVDB headers not found"
+            exit 1
+          }
+          Write-Host "OpenVDB headers OK"
+
+          Write-Host "Checking Imath..."
+          if (!(Test-Path "$root\include\Imath")) {
+            Write-Error "Imath headers not found"
+            exit 1
+          }
+          Write-Host "Imath headers OK"
+
+          Write-Host ""
+          Write-Host "Installed OpenVDB libraries:"
+          Get-ChildItem "$root\lib" -Filter "*openvdb*" -ErrorAction SilentlyContinue
+
+          Write-Host ""
+          Write-Host "Installed GLEW libraries:"
+          Get-ChildItem "$root\lib" -Filter "*glew*" -ErrorAction SilentlyContinue
 
       - name: Configure CMake
         shell: pwsh
