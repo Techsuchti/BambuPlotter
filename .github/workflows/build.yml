@@ -64,26 +64,65 @@ jobs:
       - name: Prepare MSVC environment
         shell: pwsh
         run: |
+          # setup-msbuild adds MSBuild to PATH, but it does not create a
+          # Visual Studio developer environment. CMake/vcpkg need cl.exe,
+          # INCLUDE, LIB and the Windows SDK variables as well.
+          $vsPath = & vswhere.exe -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vsPath)) {
+            Write-Error 'Visual Studio C++ toolchain was not found.'
+            exit 1
+          }
+
+          $vsDevCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
+          if (!(Test-Path $vsDevCmd)) {
+            Write-Error "VsDevCmd.bat was not found: $vsDevCmd"
+            exit 1
+          }
+
+          Write-Host "Visual Studio: $vsPath"
+          Write-Host "Developer command file: $vsDevCmd"
+
+          # Import the complete VS x64 developer environment into this
+          # GitHub Actions job so cl.exe is available to following steps.
+          $envDump = cmd.exe /d /s /c "`"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && set"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error 'VsDevCmd.bat failed.'
+            exit 1
+          }
+
+          $variables = @('PATH','INCLUDE','LIB','LIBPATH','VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion','VSINSTALLDIR','VisualStudioVersion')
+          foreach ($line in $envDump) {
+            foreach ($name in $variables) {
+              if ($line -match "^$([regex]::Escape($name))=(.*)$") {
+                $value = $matches[1]
+                Set-Item -Path "Env:$name" -Value $value
+                "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                break
+              }
+            }
+          }
+
+          # Remove MinGW entries that can make CMake's prerequisite checks
+          # select objdump/gcc instead of the MSVC toolchain.
           $cleanPath = ($env:PATH -split ';' | Where-Object {
             $_ -and ($_ -notmatch '(?i)mingw')
           }) -join ';'
           $env:PATH = $cleanPath
           "PATH=$cleanPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-          Write-Host 'MSVC:'
+          Write-Host 'MSVC compiler:'
           where.exe cl.exe
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error 'cl.exe is still not available after loading VsDevCmd.bat.'
+            exit 1
+          }
           cl.exe 2>&1 | Select-Object -First 4
 
           Write-Host 'CMake:'
           cmake --version
 
-          Write-Host 'Generator candidates:'
+          Write-Host 'Visual Studio generators:'
           cmake --help | Select-String -Pattern 'Visual Studio 17|Visual Studio 18'
-
-          $objdump = Get-Command objdump.exe -ErrorAction SilentlyContinue
-          if ($null -ne $objdump) {
-            Write-Warning "objdump found at $($objdump.Source). This should not be a MinGW executable."
-          }
 
       - name: Configure CMake
         shell: pwsh
