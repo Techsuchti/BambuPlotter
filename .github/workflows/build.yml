@@ -2,7 +2,9 @@ name: Windows Build
 
 on:
   push:
-    branches: [master, main]
+    branches:
+      - master
+      - main
   workflow_dispatch:
 
 permissions:
@@ -12,6 +14,7 @@ jobs:
   build:
     name: Build BambuPlotter
     runs-on: windows-2022
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
@@ -26,143 +29,147 @@ jobs:
       - name: Setup vcpkg
         shell: pwsh
         run: |
-          $vcpkgRoot = "$env:GITHUB_WORKSPACE\vcpkg"
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$vcpkgRoot"
-          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+          $vcpkgRoot = Join-Path $env:GITHUB_WORKSPACE 'vcpkg'
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkgRoot
+          if ($LASTEXITCODE -ne 0) { throw 'git clone vcpkg failed.' }
+          & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg bootstrap failed.' }
           "VCPKG_ROOT=$vcpkgRoot" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install dependencies
         shell: pwsh
         run: |
-          $vcpkg = "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe"
-          & $vcpkg install `
-            pkgconf:x64-windows glfw3:x64-windows glew:x64-windows cereal:x64-windows `
-            nlopt:x64-windows libnoise:x64-windows wxwidgets:x64-windows opencv:x64-windows `
-            curl:x64-windows zlib:x64-windows tbb:x64-windows `
-            boost-system:x64-windows boost-filesystem:x64-windows boost-thread:x64-windows `
-            boost-log:x64-windows boost-locale:x64-windows boost-regex:x64-windows `
-            boost-chrono:x64-windows boost-atomic:x64-windows boost-date-time:x64-windows `
-            boost-iostreams:x64-windows imath:x64-windows openvdb:x64-windows
+          $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'vcpkg\vcpkg.exe'
+          $packages = @(
+            'pkgconf:x64-windows','glfw3:x64-windows','glew:x64-windows','cereal:x64-windows',
+            'nlopt:x64-windows','libnoise:x64-windows','wxwidgets:x64-windows','opencv:x64-windows',
+            'curl:x64-windows','zlib:x64-windows','tbb:x64-windows',
+            'boost-system:x64-windows','boost-filesystem:x64-windows','boost-thread:x64-windows',
+            'boost-log:x64-windows','boost-locale:x64-windows','boost-regex:x64-windows',
+            'boost-chrono:x64-windows','boost-atomic:x64-windows','boost-date-time:x64-windows',
+            'boost-iostreams:x64-windows','imath:x64-windows','openvdb:x64-windows'
+          )
+          & $vcpkg install $packages
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg dependency installation failed.' }
 
-      - name: Prepare MSVC environment
+      - name: Prepare MSVC
         shell: pwsh
         run: |
           $vsPath = & vswhere.exe -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (!$vsPath) { throw 'Visual Studio C++ toolchain was not found.' }
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vsPath)) { throw 'MSVC toolchain not found.' }
           $vsDevCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
-          $envDump = cmd.exe /d /s /c "`"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && set"
+          if (!(Test-Path $vsDevCmd)) { throw "VsDevCmd.bat not found: $vsDevCmd" }
+
+          $dump = cmd.exe /d /s /c "`"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && set"
           if ($LASTEXITCODE -ne 0) { throw 'VsDevCmd.bat failed.' }
 
-          foreach ($name in @('PATH','INCLUDE','LIB','LIBPATH','VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion','VSINSTALLDIR','VisualStudioVersion')) {
-            foreach ($line in $envDump) {
-              if ($line -match "^$([regex]::Escape($name))=(.*)$") {
-                $value = $matches[1]
-                Set-Item "Env:$name" $value
+          $names = @('PATH','INCLUDE','LIB','LIBPATH','VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion','VSINSTALLDIR','VisualStudioVersion')
+          foreach ($line in $dump) {
+            foreach ($name in $names) {
+              if ($line.StartsWith($name + '=')) {
+                $value = $line.Substring($name.Length + 1)
+                Set-Item -Path "Env:$name" -Value $value
                 "$name=$value" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
                 break
               }
             }
           }
 
-          $env:PATH = (($env:PATH -split ';' | Where-Object { $_ -and ($_ -notmatch '(?i)mingw') }) -join ';')
-          "PATH=$env:PATH" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $clean = ($env:PATH -split ';' | Where-Object { $_ -and ($_ -notmatch '(?i)mingw') }) -join ';'
+          $env:PATH = $clean
+          "PATH=$clean" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
           where.exe cl.exe
           if ($LASTEXITCODE -ne 0) { throw 'cl.exe is not available.' }
           cl.exe 2>&1 | Select-Object -First 4
 
-      - name: Resolve libnoise
+      - name: Prepare libnoise paths
         shell: pwsh
         run: |
-          $prefix = "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows"
-          $include = "$prefix\include"
-          $libDirs = @("$prefix\lib", "$prefix\debug\lib")
+          $prefix = Join-Path $env:GITHUB_WORKSPACE 'vcpkg\installed\x64-windows'
+          $include = Join-Path $prefix 'include'
+          $releaseDir = Join-Path $prefix 'lib'
+          $debugDir = Join-Path $prefix 'debug\lib'
 
-          $release = Get-ChildItem $libDirs[0] -Filter '*.lib' -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '(?i)noise' } | Select-Object -First 1
-          $debug = Get-ChildItem $libDirs[1] -Filter '*.lib' -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '(?i)noise' } | Select-Object -First 1
+          if (!(Test-Path (Join-Path $include 'noise'))) { throw 'libnoise headers were not installed.' }
 
-          if (!$release) {
-            Write-Host 'Installed release libraries:'
-            Get-ChildItem $libDirs[0] -Filter '*.lib' -File | Select-Object Name
-            throw "libnoise library not found in $($libDirs[0])"
-          }
-          if (!(Test-Path "$include\noise")) { throw "libnoise headers not found in $include" }
+          $release = Get-ChildItem $releaseDir -Filter '*.lib' -File | Where-Object { $_.Name -match '(?i)noise' } | Select-Object -First 1
+          if (!$release) { throw "No libnoise release library found in $releaseDir" }
 
-          Write-Host "libnoise include = $include"
-          Write-Host "libnoise release = $($release.FullName)"
-          if ($debug) { Write-Host "libnoise debug = $($debug.FullName)" }
+          $debug = Get-ChildItem $debugDir -Filter '*.lib' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)noise' } | Select-Object -First 1
+          Write-Host "libnoise include: $include"
+          Write-Host "libnoise release: $($release.FullName)"
+          if ($debug) { Write-Host "libnoise debug: $($debug.FullName)" }
+
           "LIBNOISE_INCLUDE_DIR=$include" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "LIBNOISE_LIBRARY=$($release.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Patch CMake dependency compatibility
+      - name: Patch CMake ALIAS compatibility
         shell: pwsh
         run: |
-          $file = "$env:GITHUB_WORKSPACE\CMakeLists.txt"
+          $file = Join-Path $env:GITHUB_WORKSPACE 'CMakeLists.txt'
           $text = Get-Content $file -Raw
-          $pattern = 'if\(TARGET \$\{tgt\}\)\s*set_target_properties\(\$\{tgt\} PROPERTIES MAP_IMPORTED_CONFIG_\$\{from_CFG\} \$\{to_Cfg\}\)\s*endif\(\)'
-          $replacement = @'
-if(TARGET ${tgt})
-                get_target_property(_slic3r_alias ${tgt} ALIASED_TARGET)
-                if(NOT _slic3r_alias)
-                    set_target_properties(${tgt} PROPERTIES MAP_IMPORTED_CONFIG_${from_CFG} ${to_Cfg})
-                endif()
-            endif()
-'@
-          if ($text -match $pattern) {
-            $text = [regex]::Replace($text, $pattern, $replacement.Trim(), 1)
+
+          $old = 'if(TARGET ${tgt})`n        set_target_properties(${tgt} PROPERTIES MAP_IMPORTED_CONFIG_${from_CFG} ${to_Cfg})`n    endif()'
+          $new = 'if(TARGET ${tgt})`n        get_target_property(_slic3r_alias ${tgt} ALIASED_TARGET)`n        if(NOT _slic3r_alias)`n            set_target_properties(${tgt} PROPERTIES MAP_IMPORTED_CONFIG_${from_CFG} ${to_Cfg})`n        endif()`n    endif()'
+
+          if ($text.Contains($old)) {
+            $text = $text.Replace($old, $new)
             Set-Content $file $text -Encoding utf8
-            Write-Host 'Patched slic3r_remap_configs() for ALIAS targets.'
+            Write-Host 'ALIAS compatibility patch applied.'
+          } elseif ($text.Contains('get_target_property(_slic3r_alias ${tgt} ALIASED_TARGET)')) {
+            Write-Host 'ALIAS compatibility patch already present.'
           } else {
-            Write-Host 'slic3r_remap_configs() already patched or source differs.'
+            throw 'Could not locate slic3r_remap_configs() in CMakeLists.txt.'
           }
 
       - name: Configure CMake
         shell: pwsh
         run: |
-          $buildDir = "$env:GITHUB_WORKSPACE\build"
-          if (Test-Path $buildDir) { Remove-Item $buildDir -Recurse -Force }
-          $toolchain = "$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake"
-          $prefix = "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows"
+          $build = Join-Path $env:GITHUB_WORKSPACE 'build'
+          $toolchain = Join-Path $env:GITHUB_WORKSPACE 'vcpkg\scripts\buildsystems\vcpkg.cmake'
+          $prefix = Join-Path $env:GITHUB_WORKSPACE 'vcpkg\installed\x64-windows'
+          if (Test-Path $build) { Remove-Item $build -Recurse -Force }
 
-          cmake -S "$env:GITHUB_WORKSPACE" -B "$buildDir" `
+          cmake -S $env:GITHUB_WORKSPACE -B $build `
             -G 'Visual Studio 17 2022' -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
+            -DCMAKE_TOOLCHAIN_FILE=$toolchain `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DVCPKG_MANIFEST_MODE=OFF `
-            -DCMAKE_PREFIX_PATH="$prefix" `
-            -DLIBNOISE_INCLUDE_DIR="$env:LIBNOISE_INCLUDE_DIR" `
-            -DLIBNOISE_LIBRARY="$env:LIBNOISE_LIBRARY" `
-            -DOPENVDB_INCLUDEDIR="$prefix\include" `
-            -DOPENVDB_LIBRARYDIR="$prefix\lib" `
-            -DSLIC3R_GUI=ON -DSLIC3R_STATIC=OFF `
-            -DSLIC3R_BUILD_TESTS=OFF -DSLIC3R_BUILD_SANDBOXES=OFF -DSLIC3R_ASAN=OFF
-          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
+            -DCMAKE_PREFIX_PATH=$prefix `
+            -DLIBNOISE_INCLUDE_DIR=$env:LIBNOISE_INCLUDE_DIR `
+            -DLIBNOISE_LIBRARY=$env:LIBNOISE_LIBRARY `
+            -DOPENVDB_INCLUDEDIR=$prefix\include `
+            -DOPENVDB_LIBRARYDIR=$prefix\lib `
+            -DSLIC3R_GUI=ON `
+            -DSLIC3R_STATIC=OFF `
+            -DSLIC3R_BUILD_TESTS=OFF `
+            -DSLIC3R_BUILD_SANDBOXES=OFF `
+            -DSLIC3R_ASAN=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
 
-      - name: Build
+      - name: Build Release
         shell: pwsh
         run: |
-          cmake --build "$env:GITHUB_WORKSPACE\build" --config Release --parallel
+          cmake --build (Join-Path $env:GITHUB_WORKSPACE 'build') --config Release --parallel
           if ($LASTEXITCODE -ne 0) { throw 'CMake build failed.' }
 
       - name: Find executable
         shell: pwsh
         run: |
-          $exe = Get-ChildItem "$env:GITHUB_WORKSPACE\build" -Recurse -Filter 'BambuPlotter.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          $exe = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'build') -Recurse -Filter 'BambuPlotter.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
           if (!$exe) { throw 'BambuPlotter.exe was not created.' }
           "BAMBU_PLOTTER_EXE=$($exe.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "BambuPlotter found: $($exe.FullName)"
+          Write-Host "Found: $($exe.FullName)"
 
       - name: Prepare artifact
         shell: pwsh
         run: |
-          $package = "$env:GITHUB_WORKSPACE\BambuPlotter-Windows"
+          $package = Join-Path $env:GITHUB_WORKSPACE 'BambuPlotter-Windows'
           if (Test-Path $package) { Remove-Item $package -Recurse -Force }
           New-Item $package -ItemType Directory -Force | Out-Null
-          Copy-Item $env:BAMBU_PLOTTER_EXE "$package\BambuPlotter.exe" -Force
-          Copy-Item "$env:GITHUB_WORKSPACE\resources" "$package\resources" -Recurse -Force
+          Copy-Item $env:BAMBU_PLOTTER_EXE (Join-Path $package 'BambuPlotter.exe') -Force
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'resources') (Join-Path $package 'resources') -Recurse -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
