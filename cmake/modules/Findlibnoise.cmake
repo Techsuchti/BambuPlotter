@@ -1,9 +1,8 @@
 # Findlibnoise.cmake - Find libnoise for structured fuzzy skin
 #
-# Use CMAKE_PREFIX_PATH to point to the dep root (e.g. .../dep_win_new/usr/local).
-#   include/libnoise/noise.h, lib/libnoise_static.lib (.lib on Windows, .a on Linux)
-#
-# Ref: https://github.com/bambulab/libnoise
+# Supports both the historical BambuLab libnoise layout and the vcpkg
+# libnoise port. The latter installs headers under include/noise and the
+# static library as noise-static.lib on Windows.
 #
 # Provides: noise::noise (imported static library)
 
@@ -11,18 +10,18 @@ if(libnoise_FOUND)
   return()
 endif()
 
-find_path(LIBNOISE_INCLUDE_DIR NAMES noise.h
+# Allow callers to provide the dependency root through CMAKE_PREFIX_PATH.
+# vcpkg's x64-windows prefix is one such root.
+find_path(LIBNOISE_INCLUDE_DIR
+  NAMES noise/noise.h noise.h
   PATHS ${CMAKE_PREFIX_PATH}
-  PATH_SUFFIXES include/libnoise include
-  NO_DEFAULT_PATH
+  PATH_SUFFIXES include include/libnoise
 )
 
-# bambulab/libnoise produces libnoise_static (.lib on Windows, liblibnoise_static.a on Linux)
 find_library(LIBNOISE_LIBRARY
-  NAMES libnoise_static noise_static
+  NAMES noise-static libnoise_static noise_static
   PATHS ${CMAKE_PREFIX_PATH}
   PATH_SUFFIXES lib
-  NO_DEFAULT_PATH
 )
 
 include(FindPackageHandleStandardArgs)
@@ -36,5 +35,6 @@ if(libnoise_FOUND AND NOT TARGET noise::noise)
     IMPORTED_LOCATION "${LIBNOISE_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${LIBNOISE_INCLUDE_DIR}"
   )
-  mark_as_advanced(LIBNOISE_INCLUDE_DIR LIBNOISE_LIBRARY)
 endif()
+
+mark_as_advanced(LIBNOISE_INCLUDE_DIR LIBNOISE_LIBRARY)
