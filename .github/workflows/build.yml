@@ -31,6 +31,9 @@ jobs:
           $vcpkgRoot = "$env:GITHUB_WORKSPACE\vcpkg"
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "$vcpkgRoot"
           & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) {
+            throw "vcpkg bootstrap failed."
+          }
           "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install dependencies
@@ -61,6 +64,9 @@ jobs:
             boost-iostreams:x64-windows `
             imath:x64-windows `
             openvdb:x64-windows
+          if ($LASTEXITCODE -ne 0) {
+            throw "vcpkg dependency installation failed."
+          }
 
       - name: Prepare MSVC environment
         shell: pwsh
@@ -125,6 +131,76 @@ jobs:
           Write-Host 'Visual Studio generators:'
           cmake --help | Select-String -Pattern 'Visual Studio 17|Visual Studio 18'
 
+      - name: Patch CMake dependency compatibility
+        shell: pwsh
+        run: |
+          $prefix = "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows"
+          $noiseInclude = Join-Path $prefix 'include'
+          $noiseLibDir = Join-Path $prefix 'lib'
+          $noiseDebugLibDir = Join-Path $prefix 'debug\lib'
+
+          if (!(Test-Path $noiseInclude)) {
+            throw "vcpkg include directory not found: $noiseInclude"
+          }
+
+          # vcpkg's libnoise port can use a different library filename than
+          # the historical BambuLab Findlibnoise.cmake expects. Resolve the
+          # actual installed .lib instead of guessing its name.
+          $noiseLib = Get-ChildItem -Path $noiseLibDir -Filter '*.lib' -File |
+            Where-Object { $_.Name -match '(?i)noise' } |
+            Select-Object -First 1
+
+          if ($null -eq $noiseLib) {
+            Write-Host 'Release libnoise libraries:'
+            Get-ChildItem -Path $noiseLibDir -Filter '*.lib' -File | Select-Object Name,FullName
+            throw "No libnoise .lib was found in $noiseLibDir"
+          }
+
+          $noiseDebugLib = Get-ChildItem -Path $noiseDebugLibDir -Filter '*.lib' -File |
+            Where-Object { $_.Name -match '(?i)noise' } |
+            Select-Object -First 1
+
+          Write-Host "libnoise include: $noiseInclude"
+          Write-Host "libnoise release library: $($noiseLib.FullName)"
+          if ($null -ne $noiseDebugLib) {
+            Write-Host "libnoise debug library: $($noiseDebugLib.FullName)"
+          }
+
+          "LIBNOISE_INCLUDE_DIR=$noiseInclude" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LIBNOISE_LIBRARY=$($noiseLib.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          # Newer vcpkg/CMake dependency packages can expose Boost/OpenEXR
+          # libraries as ALIAS targets. CMake refuses set_target_properties()
+          # on ALIAS targets, so make slic3r_remap_configs() alias-safe.
+          $cmakeFile = "$env:GITHUB_WORKSPACE\CMakeLists.txt"
+          $content = Get-Content -Path $cmakeFile -Raw
+
+          $oldBlock = @'
+            if(TARGET ${tgt})
+                set_target_properties(${tgt} PROPERTIES MAP_IMPORTED_CONFIG_${from_CFG} ${to_Cfg})
+            endif()
+'@
+
+          $newBlock = @'
+            if(TARGET ${tgt})
+                get_target_property(_slic3r_alias ${tgt} ALIASED_TARGET)
+                if(NOT _slic3r_alias)
+                    set_target_properties(${tgt} PROPERTIES MAP_IMPORTED_CONFIG_${from_CFG} ${to_Cfg})
+                endif()
+            endif()
+'@
+
+          if (!$content.Contains($oldBlock.Trim())) {
+            Write-Host 'Alias-safe remap block already present or source layout changed.'
+          } else {
+            $content = $content.Replace($oldBlock.Trim(), $newBlock.Trim())
+            Set-Content -Path $cmakeFile -Value $content -Encoding utf8
+            Write-Host 'Patched slic3r_remap_configs() to skip ALIAS targets.'
+          }
+
+          Write-Host 'Patched CMake function:'
+          Select-String -Path $cmakeFile -Pattern 'slic3r_remap_configs|ALIASED_TARGET|MAP_IMPORTED_CONFIG' -Context 0,2
+
       - name: Configure CMake
         shell: pwsh
         run: |
@@ -145,6 +221,8 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DVCPKG_MANIFEST_MODE=OFF `
             -DCMAKE_PREFIX_PATH="$prefix" `
+            -DLIBNOISE_INCLUDE_DIR="$env:LIBNOISE_INCLUDE_DIR" `
+            -DLIBNOISE_LIBRARY="$env:LIBNOISE_LIBRARY" `
             -DOPENVDB_INCLUDEDIR="$prefix\include" `
             -DOPENVDB_LIBRARYDIR="$prefix\lib" `
             -DSLIC3R_GUI=ON `
@@ -153,6 +231,10 @@ jobs:
             -DSLIC3R_BUILD_SANDBOXES=OFF `
             -DSLIC3R_ASAN=OFF
 
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake configuration failed."
+          }
+
       - name: Build
         shell: pwsh
         run: |
@@ -160,6 +242,10 @@ jobs:
             --build "$env:GITHUB_WORKSPACE\build" `
             --config Release `
             --parallel
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake build failed."
+          }
 
       - name: Find executable
         shell: pwsh
