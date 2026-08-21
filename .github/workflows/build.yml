@@ -43,6 +43,7 @@ jobs:
             glew:x64-windows `
             cereal:x64-windows `
             nlopt:x64-windows `
+            libnoise:x64-windows `
             wxwidgets:x64-windows `
             opencv:x64-windows `
             curl:x64-windows `
