@@ -26,6 +26,7 @@ jobs:
         shell: pwsh
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "$env:GITHUB_WORKSPACE\vcpkg"
+
           & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
 
       - name: Install dependencies
@@ -57,56 +58,120 @@ jobs:
             imath:x64-windows `
             openvdb:x64-windows
 
-      - name: Check dependencies
+      - name: Verify dependencies
         shell: pwsh
         run: |
           $root = "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows"
 
-          Write-Host "Checking NLopt..."
+          Write-Host "========================================"
+          Write-Host "Checking dependencies"
+          Write-Host "========================================"
+
+          # NLopt
           if (!(Test-Path "$root\include\nlopt.hpp")) {
-            Write-Error "nlopt.hpp not found"
+            Write-Error "NLopt headers not found"
             exit 1
           }
-          Write-Host "NLopt OK"
+          Write-Host "NLopt: OK"
 
-          Write-Host "Checking GLEW..."
+          # GLEW
           if (!(Test-Path "$root\include\GL\glew.h")) {
-            Write-Error "glew.h not found"
+            Write-Error "GLEW headers not found"
             exit 1
           }
-          Write-Host "GLEW headers OK"
+          Write-Host "GLEW: OK"
 
-          Write-Host "Checking OpenVDB..."
+          # OpenVDB
           if (!(Test-Path "$root\include\openvdb")) {
             Write-Error "OpenVDB headers not found"
             exit 1
           }
-          Write-Host "OpenVDB headers OK"
+          Write-Host "OpenVDB: OK"
 
-          Write-Host "Checking Imath..."
+          # Imath
           if (!(Test-Path "$root\include\Imath")) {
             Write-Error "Imath headers not found"
             exit 1
           }
-          Write-Host "Imath headers OK"
+          Write-Host "Imath: OK"
+
+          # TBB
+          if (!(Test-Path "$root\include\tbb")) {
+            Write-Error "TBB headers not found"
+            exit 1
+          }
+          Write-Host "TBB: OK"
 
           Write-Host ""
-          Write-Host "Installed OpenVDB libraries:"
+          Write-Host "OpenVDB libraries:"
           Get-ChildItem "$root\lib" -Filter "*openvdb*" -ErrorAction SilentlyContinue
 
           Write-Host ""
-          Write-Host "Installed GLEW libraries:"
+          Write-Host "GLEW libraries:"
           Get-ChildItem "$root\lib" -Filter "*glew*" -ErrorAction SilentlyContinue
+
+      - name: Configure MSVC environment
+        shell: pwsh
+        run: |
+          Write-Host "========================================"
+          Write-Host "Preparing MSVC environment"
+          Write-Host "========================================"
+
+          # Remove MinGW from PATH.
+          # The bundled FindOpenVDB.cmake calls CMake get_prerequisites(),
+          # which was previously picking up C:/mingw64/bin/objdump.exe.
+          $cleanPath = ($env:PATH -split ';' | Where-Object {
+            $_ -and ($_ -notmatch '(?i)mingw')
+          }) -join ';'
+
+          $env:PATH = $cleanPath
+
+          # Persist cleaned PATH for following GitHub Actions steps.
+          "PATH=$cleanPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
+
+          Write-Host ""
+          Write-Host "Checking objdump:"
+          $objdump = Get-Command objdump.exe -ErrorAction SilentlyContinue
+
+          if ($null -eq $objdump) {
+            Write-Host "No MinGW objdump found in PATH - good."
+          }
+          else {
+            Write-Host "objdump found at: $($objdump.Source)"
+          }
+
+          Write-Host ""
+          Write-Host "CMake:"
+          cmake --version
+
+          Write-Host ""
+          Write-Host "Compiler:"
+          where.exe cl.exe
 
       - name: Configure CMake
         shell: pwsh
         run: |
+          Write-Host "========================================"
+          Write-Host "Configuring CMake"
+          Write-Host "========================================"
+
+          $buildDir = "$env:GITHUB_WORKSPACE\build"
+
+          # Make absolutely sure we start from a clean CMake cache.
+          if (Test-Path $buildDir) {
+            Remove-Item `
+              -Path $buildDir `
+              -Recurse `
+              -Force
+          }
+
           cmake `
             -S "$env:GITHUB_WORKSPACE" `
-            -B "$env:GITHUB_WORKSPACE\build" `
+            -B "$buildDir" `
             -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_MANIFEST_MODE=OFF `
             -DSLIC3R_GUI=ON `
             -DSLIC3R_BUILD_TESTS=OFF `
             -DSLIC3R_BUILD_SANDBOXES=OFF `
@@ -115,6 +180,10 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
+          Write-Host "========================================"
+          Write-Host "Building BambuPlotter"
+          Write-Host "========================================"
+
           cmake `
             --build "$env:GITHUB_WORKSPACE\build" `
             --config Release `
@@ -123,6 +192,10 @@ jobs:
       - name: Find executable
         shell: pwsh
         run: |
+          Write-Host "========================================"
+          Write-Host "Searching for BambuPlotter.exe"
+          Write-Host "========================================"
+
           $exe = Get-ChildItem `
             "$env:GITHUB_WORKSPACE\build" `
             -Recurse `
@@ -138,6 +211,10 @@ jobs:
           Write-Host "BambuPlotter found:"
           Write-Host $exe.FullName
 
+          "BAMBU_PLOTTER_EXE=$($exe.FullName)" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Encoding utf8
+
       - name: Prepare artifact
         shell: pwsh
         run: |
@@ -148,17 +225,13 @@ jobs:
             -Path $package `
             -Force | Out-Null
 
-          $exe = Get-ChildItem `
-            "$env:GITHUB_WORKSPACE\build" `
-            -Recurse `
-            -Filter "BambuPlotter.exe" `
-            -ErrorAction Stop |
-            Select-Object -First 1
-
           Copy-Item `
-            $exe.FullName `
+            "$env:BAMBU_PLOTTER_EXE" `
             "$package\BambuPlotter.exe" `
             -Force
+
+          Write-Host "Package created:"
+          Get-ChildItem $package
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
