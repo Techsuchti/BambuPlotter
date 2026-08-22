@@ -1,3 +1,4 @@
+# Windows CI trigger: validate MSVC discovery on the hosted runner.
 name: Windows Build
 
 on:
@@ -55,43 +56,25 @@ jobs:
       - name: Prepare MSVC
         shell: pwsh
         run: |
-          # Do not depend on importing VsDevCmd.bat into PowerShell. The
-          # GitHub runner already has Visual Studio installed; find cl.exe
-          # directly and add its directory to PATH. The VS CMake generator
-          # will configure the remaining compiler/SDK environment itself.
           $vsPath = & vswhere.exe -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vsPath)) {
-            throw 'MSVC toolchain not found.'
-          }
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vsPath)) { throw 'MSVC toolchain not found.' }
+          $vsDevCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
+          if (!(Test-Path $vsDevCmd)) { throw "VsDevCmd.bat not found: $vsDevCmd" }
 
-          Write-Host "Visual Studio: $vsPath"
+          $msvcRoot = Join-Path $vsPath 'VC\Tools\MSVC'
+          $toolset = Get-ChildItem $msvcRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if (!$toolset) { throw "No MSVC toolset found below $msvcRoot" }
 
-          $cl = Get-ChildItem -Path (Join-Path $vsPath 'VC\Tools\MSVC') `
-            -Filter 'cl.exe' -File -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\bin\\Hostx64\\x64\\cl\.exe$' } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
+          $compilerDir = Join-Path $toolset.FullName 'bin\Hostx64\x64'
+          $cl = Join-Path $compilerDir 'cl.exe'
+          if (!(Test-Path $cl)) { throw "cl.exe not found at $cl" }
 
-          if ($null -eq $cl) {
-            throw "Could not locate x64 MSVC cl.exe below $vsPath"
-          }
-
-          $compilerDir = $cl.DirectoryName
-          $cleanPath = ($env:PATH -split ';' | Where-Object {
-            $_ -and ($_ -notmatch '(?i)mingw')
-          }) -join ';'
-          $env:PATH = "$compilerDir;$cleanPath"
-
+          $env:PATH = "$compilerDir;$env:PATH"
           "PATH=$env:PATH" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "VSCMD_ARG_TGT_ARCH=x64" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "VCINSTALLDIR=$(Split-Path (Split-Path (Split-Path $compilerDir -Parent) -Parent) -Parent)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-
-          Write-Host "MSVC compiler: $($cl.FullName)"
-          & $cl.FullName 2>&1 | Select-Object -First 4
-
-          if (!(Test-Path $cl.FullName)) {
-            throw 'MSVC cl.exe disappeared after discovery.'
-          }
+          "VCToolsInstallDir=$($toolset.FullName)\" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "MSVC compiler: $cl"
+          & $cl 2>&1 | Select-Object -First 4
+          if ($LASTEXITCODE -notin @(0, 2)) { throw "cl.exe validation failed with exit code $LASTEXITCODE" }
 
       - name: Prepare libnoise paths
         shell: pwsh
@@ -100,12 +83,10 @@ jobs:
           $include = Join-Path $prefix 'include'
           $releaseDir = Join-Path $prefix 'lib'
           $debugDir = Join-Path $prefix 'debug\lib'
-
           if (!(Test-Path (Join-Path $include 'noise'))) { throw 'libnoise headers were not installed.' }
           $release = Get-ChildItem $releaseDir -Filter '*.lib' -File | Where-Object { $_.Name -match '(?i)noise' } | Select-Object -First 1
           if (!$release) { throw "No libnoise release library found in $releaseDir" }
           $debug = Get-ChildItem $debugDir -Filter '*.lib' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)noise' } | Select-Object -First 1
-
           Write-Host "libnoise include: $include"
           Write-Host "libnoise release: $($release.FullName)"
           if ($debug) { Write-Host "libnoise debug: $($debug.FullName)" }
@@ -117,8 +98,10 @@ jobs:
         run: |
           $file = Join-Path $env:GITHUB_WORKSPACE 'CMakeLists.txt'
           $text = Get-Content $file -Raw
-          $pattern = '(?ms)if\(TARGET \$\{tgt\}\)\s*set_target_properties\(\$\{tgt\} PROPERTIES MAP_IMPORTED_CONFIG_\$\{from_CFG\} \$\{to_Cfg\}\)\s*endif\(\)'
-          $replacement = @'
+          if ($text -match 'get_target_property\(_slic3r_alias \$\{tgt\} ALIASED_TARGET\)') {
+            Write-Host 'ALIAS compatibility patch already present.'
+          } elseif ($text -match '(?ms)if\(TARGET \$\{tgt\}\)\s*set_target_properties\(\$\{tgt\} PROPERTIES MAP_IMPORTED_CONFIG_\$\{from_CFG\} \$\{to_Cfg\}\)\s*endif\(\)') {
+            $replacement = @'
 if(TARGET ${tgt})
         get_target_property(_slic3r_alias ${tgt} ALIASED_TARGET)
         if(NOT _slic3r_alias)
@@ -126,16 +109,10 @@ if(TARGET ${tgt})
         endif()
     endif()
 '@
-
-          if ($text -match 'get_target_property\(_slic3r_alias \$\{tgt\} ALIASED_TARGET\)') {
-            Write-Host 'ALIAS compatibility patch already present.'
-          } elseif ($text -match $pattern) {
-            $text = [regex]::Replace($text, $pattern, $replacement.Trim(), 1)
+            $text = [regex]::Replace($text, '(?ms)if\(TARGET \$\{tgt\}\)\s*set_target_properties\(\$\{tgt\} PROPERTIES MAP_IMPORTED_CONFIG_\$\{from_CFG\} \$\{to_Cfg\}\)\s*endif\(\)', $replacement.Trim(), 1)
             Set-Content $file $text -Encoding utf8
             Write-Host 'ALIAS compatibility patch applied.'
-          } else {
-            throw 'Could not locate slic3r_remap_configs() in CMakeLists.txt.'
-          }
+          } else { throw 'Could not locate slic3r_remap_configs() in CMakeLists.txt.' }
 
       - name: Configure CMake
         shell: pwsh
@@ -144,7 +121,6 @@ if(TARGET ${tgt})
           $toolchain = Join-Path $env:GITHUB_WORKSPACE 'vcpkg\scripts\buildsystems\vcpkg.cmake'
           $prefix = Join-Path $env:GITHUB_WORKSPACE 'vcpkg\installed\x64-windows'
           if (Test-Path $build) { Remove-Item $build -Recurse -Force }
-
           cmake -S $env:GITHUB_WORKSPACE -B $build `
             -G 'Visual Studio 17 2022' -A x64 `
             -DCMAKE_TOOLCHAIN_FILE=$toolchain `
@@ -155,11 +131,8 @@ if(TARGET ${tgt})
             -DLIBNOISE_LIBRARY=$env:LIBNOISE_LIBRARY `
             -DOPENVDB_INCLUDEDIR=$prefix\include `
             -DOPENVDB_LIBRARYDIR=$prefix\lib `
-            -DSLIC3R_GUI=ON `
-            -DSLIC3R_STATIC=OFF `
-            -DSLIC3R_BUILD_TESTS=OFF `
-            -DSLIC3R_BUILD_SANDBOXES=OFF `
-            -DSLIC3R_ASAN=OFF
+            -DSLIC3R_GUI=ON -DSLIC3R_STATIC=OFF `
+            -DSLIC3R_BUILD_TESTS=OFF -DSLIC3R_BUILD_SANDBOXES=OFF -DSLIC3R_ASAN=OFF
           if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
 
       - name: Build Release
