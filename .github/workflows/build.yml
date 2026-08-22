@@ -55,33 +55,43 @@ jobs:
       - name: Prepare MSVC
         shell: pwsh
         run: |
+          # Do not depend on importing VsDevCmd.bat into PowerShell. The
+          # GitHub runner already has Visual Studio installed; find cl.exe
+          # directly and add its directory to PATH. The VS CMake generator
+          # will configure the remaining compiler/SDK environment itself.
           $vsPath = & vswhere.exe -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vsPath)) { throw 'MSVC toolchain not found.' }
-          $vsDevCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
-          if (!(Test-Path $vsDevCmd)) { throw "VsDevCmd.bat not found: $vsDevCmd" }
-
-          $dump = cmd.exe /d /s /c "`"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && set"
-          if ($LASTEXITCODE -ne 0) { throw 'VsDevCmd.bat failed.' }
-
-          $names = @('PATH','INCLUDE','LIB','LIBPATH','VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion','VSINSTALLDIR','VisualStudioVersion')
-          foreach ($line in $dump) {
-            foreach ($name in $names) {
-              if ($line.StartsWith($name + '=')) {
-                $value = $line.Substring($name.Length + 1)
-                Set-Item -Path "Env:$name" -Value $value
-                "$name=$value" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-                break
-              }
-            }
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vsPath)) {
+            throw 'MSVC toolchain not found.'
           }
 
-          $clean = ($env:PATH -split ';' | Where-Object { $_ -and ($_ -notmatch '(?i)mingw') }) -join ';'
-          $env:PATH = $clean
-          "PATH=$clean" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Visual Studio: $vsPath"
 
-          where.exe cl.exe
-          if ($LASTEXITCODE -ne 0) { throw 'cl.exe is not available.' }
-          cl.exe 2>&1 | Select-Object -First 4
+          $cl = Get-ChildItem -Path (Join-Path $vsPath 'VC\Tools\MSVC') `
+            -Filter 'cl.exe' -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\bin\\Hostx64\\x64\\cl\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $cl) {
+            throw "Could not locate x64 MSVC cl.exe below $vsPath"
+          }
+
+          $compilerDir = $cl.DirectoryName
+          $cleanPath = ($env:PATH -split ';' | Where-Object {
+            $_ -and ($_ -notmatch '(?i)mingw')
+          }) -join ';'
+          $env:PATH = "$compilerDir;$cleanPath"
+
+          "PATH=$env:PATH" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "VSCMD_ARG_TGT_ARCH=x64" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCINSTALLDIR=$(Split-Path (Split-Path (Split-Path $compilerDir -Parent) -Parent) -Parent)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "MSVC compiler: $($cl.FullName)"
+          & $cl.FullName 2>&1 | Select-Object -First 4
+
+          if (!(Test-Path $cl.FullName)) {
+            throw 'MSVC cl.exe disappeared after discovery.'
+          }
 
       - name: Prepare libnoise paths
         shell: pwsh
